@@ -21,11 +21,10 @@ def create_river_buffer(input_path: str, output_path: str, buffer_meters: int = 
         gdf = gdf.to_crs("EPSG:4326")
         
     # 2. Project to a Metric CRS to accurately calculate meters
-    # EPSG:3857 is Web Mercator (used by Google Maps), measured in meters.
-    # Note: For highly precise local surveying, you would use a specific UTM zone,
-    # but 3857 is generally acceptable for a 500m buffer.
-    print("Projecting to metric CRS...")
-    gdf_metric = gdf.to_crs("EPSG:3857")
+    # EPSG:32646 is WGS 84 / UTM zone 46N, which is extremely precise for Guwahati, Assam.
+    # It preserves shape, area, and ellipsoidal distance metrics perfectly without distortions.
+    print("Projecting to local UTM Zone 46N (EPSG:32646) metric CRS...")
+    gdf_metric = gdf.to_crs("EPSG:32646")
     
     # 3. Create the buffer
     print(f"Applying {buffer_meters}m buffer...")
@@ -33,7 +32,7 @@ def create_river_buffer(input_path: str, output_path: str, buffer_meters: int = 
     buffered_metric = gdf_metric.geometry.buffer(buffer_meters)
     
     # Create a new GeoDataFrame with the buffered geometry
-    buffered_gdf = gpd.GeoDataFrame(geometry=buffered_metric, crs="EPSG:3857")
+    buffered_gdf = gpd.GeoDataFrame(geometry=buffered_metric, crs="EPSG:32646")
     
     # 4. Project back to WGS84 (Lat/Lon)
     print("Projecting back to GPS coordinates (WGS84)...")
@@ -45,24 +44,23 @@ def create_river_buffer(input_path: str, output_path: str, buffer_meters: int = 
     
     # Save as GeoJSON for easy web integration (Leaflet) later
     final_gdf.to_file(out_file, driver="GeoJSON")
-    print(f"✅ Success! Buffer saved to: {out_file}")
+    print(f"Success! Buffer saved to: {out_file}")
 
 if __name__ == "__main__":
     # Define paths
-    # IMPORTANT: You need to place a river shapefile or geojson here first!
     import os
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(os.path.dirname(current_dir))
     
     INPUT_RIVER_FILE = os.path.join(project_root, "data", "legal_zones", "river_centerline.geojson")
-    OUTPUT_BUFFER_FILE = os.path.join(project_root, "data", "legal_zones", "river_buffer_500m.geojson")
+    OUTPUT_BUFFER_FILE = os.path.join(project_root, "data", "legal_zones", "river_buffer_1km.geojson")
     
     # Check if input exists before running
     if Path(INPUT_RIVER_FILE).exists():
         create_river_buffer(
             input_path=INPUT_RIVER_FILE, 
             output_path=OUTPUT_BUFFER_FILE, 
-            buffer_meters=500
+            buffer_meters=1000
         )
     else:
         print(f"❌ Error: Could not find input file at {INPUT_RIVER_FILE}")

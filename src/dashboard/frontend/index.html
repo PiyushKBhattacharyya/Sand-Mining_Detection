@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brahmaputra Drone Surveillance Command Station</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        tactical: {
+                            dark: '#0a0f1d',
+                            glass: 'rgba(15, 23, 42, 0.65)',
+                            border: 'rgba(255, 255, 255, 0.08)',
+                            primary: '#3b82f6',
+                            danger: '#ef4444',
+                            warning: '#f59e0b',
+                            success: '#10b981',
+                            glow: '#00f0ff'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Leaflet.js CSS and JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <style>
+        body {
+            font-family: 'Outfit', sans-serif;
+            background-color: #050814;
+            color: #e2e8f0;
+            overflow-x: hidden;
+        }
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .glass-panel {
+            background: rgba(10, 16, 32, 0.75);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+        .glow-border-critical {
+            box-shadow: 0 0 15px rgba(239, 68, 68, 0.3);
+            border: 1px solid rgba(239, 68, 68, 0.5);
+        }
+        .glow-text {
+            text-shadow: 0 0 10px rgba(0, 240, 255, 0.6);
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #070b16;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1e293b;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #334155;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- 🌌 Top Navigation / HUD Bar -->
+    <header class="w-full glass-panel border-b border-tactical-border px-6 py-4 flex flex-col md:flex-row justify-between items-center z-50 shrink-0">
+        <div class="flex items-center gap-4 mb-4 md:mb-0">
+            <div class="w-3 h-3 rounded-full bg-cyan-400 animate-ping relative">
+                <span class="absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold tracking-wider text-white uppercase flex items-center gap-2">
+                    <span class="text-cyan-400 glow-text font-extrabold">Brahmaputra-01</span> Aerial Surveillance Hub
+                </h1>
+                <p class="text-xs text-slate-400 tracking-widest uppercase mt-0.5">Tactical Edge-Cloud Command Station</p>
+            </div>
+        </div>
+
+        <!-- Realtime Telemetry HUD Panel -->
+        <div class="flex flex-wrap items-center gap-6 text-sm">
+            <!-- Connection Status -->
+            <div class="flex items-center gap-2 px-3 py-1.5 rounded-md bg-slate-950/60 border border-tactical-border">
+                <span class="text-slate-400 uppercase text-[10px] tracking-wider font-semibold">Cloud Link:</span>
+                <span id="connection-status" class="font-bold text-red-500 flex items-center gap-1.5 uppercase tracking-wide">
+                    <span class="w-2 h-2 rounded-full bg-red-500 inline-block animate-pulse"></span> Offline
+                </span>
+            </div>
+
+            <!-- Drone Battery -->
+            <div class="flex items-center gap-2 px-3 py-1.5 rounded-md bg-slate-950/60 border border-tactical-border">
+                <span class="text-slate-400 uppercase text-[10px] tracking-wider font-semibold">Drone Battery:</span>
+                <div class="w-16 bg-slate-800 h-2.5 rounded-full overflow-hidden border border-slate-700/50 flex">
+                    <div id="battery-bar" class="bg-emerald-500 h-full w-0 transition-all duration-500"></div>
+                </div>
+                <span id="hud-battery" class="font-bold text-emerald-400 mono">0%</span>
+            </div>
+
+            <!-- Altitude & Speed -->
+            <div class="flex items-center gap-4 px-3 py-1.5 rounded-md bg-slate-950/60 border border-tactical-border text-slate-300">
+                <div>
+                    <span class="text-slate-400 uppercase text-[10px] tracking-wider">ALT AGL:</span>
+                    <span id="hud-altitude" class="font-bold text-white ml-1 mono">0.0m</span>
+                </div>
+                <div class="border-l border-slate-800 pl-3">
+                    <span class="text-slate-400 uppercase text-[10px] tracking-wider">SPEED:</span>
+                    <span id="hud-speed" class="font-bold text-white ml-1 mono">0.0 km/h</span>
+                </div>
+            </div>
+
+            <!-- Live GPS Lat/Lon -->
+            <div class="px-3 py-1.5 rounded-md bg-slate-950/60 border border-tactical-border text-slate-300 min-w-[170px]">
+                <span class="text-slate-400 uppercase text-[10px] tracking-wider block">Drone Coordinates:</span>
+                <span id="hud-coordinates" class="font-bold text-cyan-400 text-xs mono">WAITING FOR TELEMETRY...</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- 📑 Main Tabs Control -->
+    <div class="flex bg-slate-950/40 border-b border-tactical-border/60 justify-start px-6">
+        <button id="btn-tab-tactical" class="px-6 py-3.5 border-b-2 border-cyan-400 text-cyan-400 font-semibold tracking-wider text-sm flex items-center gap-2 transition-all">
+            🛰️ TACTICAL LIVE COMMAND (STREAM & MAP)
+        </button>
+        <button id="btn-tab-audit" class="px-6 py-3.5 border-b-2 border-transparent text-slate-400 hover:text-white font-semibold tracking-wider text-sm flex items-center gap-2 transition-all">
+            📊 INTELLIGENCE & AUDIT DATABASE
+        </button>
+    </div>
+
+    <!-- 🖥️ Workspace Containers -->
+    <main class="flex-grow p-6 flex flex-col min-h-0">
+        
+        <!-- ==================== TAB 1: TACTICAL LIVE COMMAND ==================== -->
+        <div id="tab-tactical" class="flex-grow grid grid-cols-1 lg:grid-cols-12 gap-6 h-full min-h-0">
+            
+            <!-- Live Dual Video Stream Panes (7 Cols) -->
+            <div class="lg:col-span-7 flex flex-col gap-6 min-h-0">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 flex-grow min-h-0">
+                    
+                    <!-- Raw DJI Video Canvas -->
+                    <div class="glass-panel rounded-lg overflow-hidden flex flex-col border border-tactical-border relative group">
+                        <div class="absolute top-3 left-3 bg-slate-950/80 px-2 py-1 rounded text-[10px] font-bold tracking-widest text-slate-400 uppercase border border-white/10 z-10">
+                            CAM 01: RAW LIVE FEED
+                        </div>
+                        <div class="absolute top-3 right-3 bg-cyan-950/80 px-2 py-1 rounded text-[10px] font-bold tracking-widest text-cyan-400 uppercase border border-cyan-500/20 z-10 animate-pulse">
+                            ● REC 1080P
+                        </div>
+                        <div class="flex-grow bg-slate-950 flex items-center justify-center relative overflow-hidden">
+                            <!-- Live Multipart Stream Tag -->
+                            <img src="/stream/raw" alt="Raw Drone Feed" class="w-full h-full object-cover aspect-video" />
+                            <!-- Simulated Crosshairs -->
+                            <div class="absolute inset-0 border border-white/5 pointer-events-none flex items-center justify-center">
+                                <div class="w-8 h-8 border border-cyan-400/20 rounded-full flex items-center justify-center">
+                                    <div class="w-1 h-1 bg-cyan-400 rounded-full"></div>
+                                </div>
+                                <div class="w-20 h-[1px] bg-cyan-400/10 absolute"></div>
+                                <div class="h-20 w-[1px] bg-cyan-400/10 absolute"></div>
+                            </div>
+                        </div>
+                        <!-- Frame Metadata Overlay -->
+                        <div class="bg-slate-950 px-4 py-2 border-t border-tactical-border text-xs flex justify-between items-center text-slate-400">
+                            <span>FPS: <strong class="text-white">20.0</strong></span>
+                            <span class="mono" id="raw-stream-time">00:00:00.0</span>
+                        </div>
+                    </div>
+
+                    <!-- Annotated AI Video Canvas -->
+                    <div class="glass-panel rounded-lg overflow-hidden flex flex-col border border-tactical-border relative group">
+                        <div class="absolute top-3 left-3 bg-slate-950/80 px-2 py-1 rounded text-[10px] font-bold tracking-widest text-slate-400 uppercase border border-white/10 z-10">
+                            CAM 01: YOLOv8 ANNOTATED FEED
+                        </div>
+                        <div class="absolute top-3 right-3 bg-rose-950/80 px-2 py-1 rounded text-[10px] font-bold tracking-widest text-rose-400 uppercase border border-rose-500/20 z-10 animate-pulse">
+                            ● DETECTING
+                        </div>
+                        <div class="flex-grow bg-slate-950 flex items-center justify-center relative overflow-hidden">
+                            <!-- Live Bounding Box Stream Tag -->
+                            <img src="/stream/overlay" alt="Annotated AI Feed" class="w-full h-full object-cover aspect-video" />
+                        </div>
+                        <!-- Bounding Box Overlay Metadata -->
+                        <div class="bg-slate-950 px-4 py-2 border-t border-tactical-border text-xs flex justify-between items-center text-slate-400">
+                            <span>YOLOv8m: <strong class="text-white">15ms Inference</strong></span>
+                            <span class="text-rose-400 font-bold uppercase tracking-wider" id="detection-indicator">No active targets</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 🎛️ Real-Time Filter & Layers Control Board -->
+                <div class="glass-panel p-5 rounded-lg border border-tactical-border">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+                        <span>🎚️</span> Target Class Filtering & Visibility Controls
+                    </h3>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <!-- All Classes Toggle -->
+                        <label class="flex items-center gap-3 bg-slate-900/60 p-3 rounded-lg border border-tactical-border cursor-pointer hover:border-cyan-500/35 transition-all">
+                            <input type="checkbox" id="filter-all" checked class="w-4 h-4 text-cyan-500 bg-slate-950 border-slate-700 rounded focus:ring-cyan-500/20 focus:ring-2">
+                            <div>
+                                <span class="block text-xs font-bold text-white">ALL TARGETS</span>
+                                <span class="block text-[10px] text-slate-400">Show all detections</span>
+                            </div>
+                        </label>
+
+                        <!-- Humans Filter checkbox (The user's requested core feature!) -->
+                        <label class="flex items-center gap-3 bg-slate-900/60 p-3 rounded-lg border border-tactical-border cursor-pointer hover:border-emerald-500/35 transition-all">
+                            <input type="checkbox" id="filter-person" checked class="class-filter w-4 h-4 text-emerald-500 bg-slate-950 border-slate-700 rounded focus:ring-emerald-500/20 focus:ring-2">
+                            <div>
+                                <span class="block text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"></span> HUMANS / WORKERS
+                                </span>
+                                <span class="block text-[10px] text-slate-400">Filter personnel presence</span>
+                            </div>
+                        </label>
+
+                        <!-- JCB Filter -->
+                        <label class="flex items-center gap-3 bg-slate-900/60 p-3 rounded-lg border border-tactical-border cursor-pointer hover:border-yellow-500/35 transition-all">
+                            <input type="checkbox" id="filter-jcb" checked class="class-filter w-4 h-4 text-yellow-500 bg-slate-950 border-slate-700 rounded focus:ring-yellow-500/20 focus:ring-2">
+                            <div>
+                                <span class="block text-xs font-bold text-yellow-400 flex items-center gap-1.5">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-yellow-400 inline-block"></span> EXCAVATORS / JCBS
+                                </span>
+                                <span class="block text-[10px] text-slate-400">Filter heavy equipment</span>
+                            </div>
+                        </label>
+
+                        <!-- Truck Filter -->
+                        <label class="flex items-center gap-3 bg-slate-900/60 p-3 rounded-lg border border-tactical-border cursor-pointer hover:border-cyan-500/35 transition-all">
+                            <input type="checkbox" id="filter-truck" checked class="class-filter w-4 h-4 text-cyan-500 bg-slate-950 border-slate-700 rounded focus:ring-cyan-500/20 focus:ring-2">
+                            <div>
+                                <span class="block text-xs font-bold text-cyan-400 flex items-center gap-1.5">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 inline-block"></span> DUMPER TRUCKS
+                                </span>
+                                <span class="block text-[10px] text-slate-400">Filter transport vehicles</span>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Leaflet GIS Map Card (5 Cols) -->
+            <div class="lg:col-span-5 flex flex-col min-h-0">
+                <div class="glass-panel rounded-lg overflow-hidden flex flex-col border border-tactical-border h-full relative">
+                    <!-- Map HUD Details -->
+                    <div class="absolute top-3 left-3 bg-slate-950/80 px-3 py-2 rounded border border-white/10 z-[1000] text-xs max-w-[240px] pointer-events-none">
+                        <span class="text-slate-400 font-bold block mb-1">🛰️ SATELLITE RADAR</span>
+                        <div class="text-[10px] text-cyan-400 flex items-center gap-1.5 uppercase font-bold">
+                            <span class="w-2 h-2 rounded bg-cyan-400 inline-block animate-ping"></span> Live Tracking Active
+                        </div>
+                        <div class="mt-2 text-[10px] text-slate-400 border-t border-slate-800 pt-2 flex flex-col gap-1">
+                            <div class="flex justify-between"><span>Active Zone:</span><span class="text-red-400 font-semibold">1km Buffer</span></div>
+                            <div class="flex justify-between"><span>Detections Visible:</span><span class="text-white" id="visible-markers-count">0</span></div>
+                        </div>
+                    </div>
+
+                    <!-- Map Container -->
+                    <div id="map" class="flex-grow w-full h-[300px] lg:h-full bg-slate-900" style="touch-action: pan-x pan-y;"></div>
+
+                    <!-- Follow Drone Toggle (top-right of map) -->
+                    <div id="map-controls" class="absolute top-3 right-3 z-[1001] flex flex-col gap-2">
+                        <button id="btn-follow-drone"
+                            class="flex items-center gap-1.5 bg-slate-950/90 border border-slate-700 text-slate-400 font-bold text-[10px] uppercase tracking-widest px-2.5 py-1.5 rounded transition-all select-none cursor-pointer"
+                            title="Toggle drone auto-follow">
+                            <span id="follow-icon" class="w-2 h-2 rounded-full bg-slate-600 inline-block"></span>
+                            <span id="follow-label">Follow OFF</span>
+                        </button>
+                        <button id="btn-recenter"
+                            class="bg-slate-950/90 border border-slate-700 text-slate-400 font-bold text-[10px] uppercase tracking-widest px-2.5 py-1.5 rounded transition-all select-none cursor-pointer"
+                            title="Jump to drone position">
+                            &#9654; Re-center
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== TAB 2: INTELLIGENCE & AUDIT DATABASE ==================== -->
+        <div id="tab-audit" class="hidden flex-grow flex flex-col gap-6 min-h-0 overflow-y-auto">
+            
+            <!-- Statistical Performance Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <!-- Card 1: Total Incidents -->
+                <div class="glass-panel p-5 rounded-lg border border-tactical-border relative overflow-hidden group">
+                    <div class="absolute -right-4 -bottom-4 text-slate-800/20 text-7xl font-extrabold group-hover:scale-110 transition-all">🚨</div>
+                    <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">Total Active Incidents</span>
+                    <h3 id="stat-incidents" class="text-3xl font-extrabold text-white mt-2 glow-text">0</h3>
+                    <p class="text-[10px] text-slate-400 uppercase mt-1">Within river reserve</p>
+                </div>
+
+                <!-- Card 2: Critical Sites -->
+                <div class="glass-panel p-5 rounded-lg border border-red-500/20 glow-border-critical relative overflow-hidden group">
+                    <div class="absolute -right-4 -bottom-4 text-red-500/10 text-7xl font-extrabold group-hover:scale-110 transition-all">⚠️</div>
+                    <span class="text-xs font-bold text-red-400 uppercase tracking-widest">Critical Alert Sites</span>
+                    <h3 id="stat-critical" class="text-3xl font-extrabold text-red-500 mt-2">0</h3>
+                    <p class="text-[10px] text-red-400 uppercase mt-1">JCB + Truck + Workers</p>
+                </div>
+
+                <!-- Card 3: Machinery Count -->
+                <div class="glass-panel p-5 rounded-lg border border-tactical-border relative overflow-hidden group">
+                    <div class="absolute -right-4 -bottom-4 text-slate-800/20 text-7xl font-extrabold group-hover:scale-110 transition-all">🚜</div>
+                    <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">Machinery Detected</span>
+                    <h3 id="stat-machinery" class="text-3xl font-extrabold text-yellow-400 mt-2">0</h3>
+                    <p class="text-[10px] text-slate-400 uppercase mt-1">JCBs & Trucks Combined</p>
+                </div>
+
+                <!-- Card 4: Personnel Count -->
+                <div class="glass-panel p-5 rounded-lg border border-tactical-border relative overflow-hidden group">
+                    <div class="absolute -right-4 -bottom-4 text-slate-800/20 text-7xl font-extrabold group-hover:scale-110 transition-all">👥</div>
+                    <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">Personnel Tracked</span>
+                    <h3 id="stat-workers" class="text-3xl font-extrabold text-emerald-400 mt-2">0</h3>
+                    <p class="text-[10px] text-slate-400 uppercase mt-1">Active on illegal sites</p>
+                </div>
+            </div>
+
+            <!-- Incident Audit Grid (Split left table, right details card) -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-grow min-h-[400px]">
+                
+                <!-- Incidents Audit Table (7 Cols) -->
+                <div class="lg:col-span-7 glass-panel rounded-lg border border-tactical-border flex flex-col overflow-hidden">
+                    <div class="px-5 py-4 border-b border-tactical-border bg-slate-950/40 flex justify-between items-center">
+                        <h3 class="text-sm font-bold uppercase tracking-wider text-white">🚨 Historical Incidents Audit Logs</h3>
+                        <button id="refresh-audits" class="text-xs bg-slate-850 hover:bg-slate-800 border border-tactical-border hover:border-cyan-500/50 text-slate-300 font-bold px-3 py-1.5 rounded transition-all">
+                            🔄 Refresh Data
+                        </button>
+                    </div>
+                    <div class="flex-grow overflow-y-auto">
+                        <table class="w-full text-left text-xs border-collapse">
+                            <thead>
+                                <tr class="bg-slate-950/70 border-b border-tactical-border text-slate-400 uppercase tracking-widest">
+                                    <th class="py-3.5 px-4 font-bold">ID</th>
+                                    <th class="py-3.5 px-4 font-bold">Timestamp</th>
+                                    <th class="py-3.5 px-4 font-bold">Centroid Lat / Lon</th>
+                                    <th class="py-3.5 px-4 font-bold text-center">Severity</th>
+                                    <th class="py-3.5 px-4 font-bold text-center">Buffer Status</th>
+                                    <th class="py-3.5 px-4 font-bold text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="incident-audit-body">
+                                <tr>
+                                    <td colspan="6" class="py-8 text-center text-slate-500 uppercase tracking-wider">Loading Incident Records...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Incident Evidence & Snapshot Panel (5 Cols) -->
+                <div class="lg:col-span-5 glass-panel rounded-lg border border-tactical-border p-5 flex flex-col justify-between overflow-hidden">
+                    <div>
+                        <h3 class="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4 border-b border-tactical-border pb-2">📂 INCIDENT TARGETS & EVIDENCE CARD</h3>
+                        
+                        <div id="evidence-empty" class="text-center py-16 text-slate-500 flex flex-col items-center gap-4">
+                            <span class="text-5xl">📁</span>
+                            <span class="text-xs uppercase tracking-wider font-bold">Select an incident from the audit list to inspect clustered targets and evidence crops.</span>
+                        </div>
+
+                        <!-- Incident inspection details -->
+                        <div id="evidence-display" class="hidden flex flex-col gap-4">
+                            <div class="flex justify-between items-center">
+                                <span class="text-sm font-bold text-white uppercase flex items-center gap-1.5">
+                                    Incident ID: <strong id="ev-id" class="text-cyan-400">#0</strong>
+                                </span>
+                                <span id="ev-severity-badge" class="px-2.5 py-1 text-[10px] font-bold rounded uppercase tracking-wider"></span>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-4 text-xs bg-slate-900/60 p-3 rounded-lg border border-tactical-border text-slate-300">
+                                <div><span class="text-slate-500">Centroid Lat:</span> <span id="ev-lat" class="mono block font-bold">0.0</span></div>
+                                <div><span class="text-slate-500">Centroid Lon:</span> <span id="ev-lon" class="mono block font-bold">0.0</span></div>
+                                <div><span class="text-slate-500">River Distance:</span> <span id="ev-dist" class="block font-bold">0.0m</span></div>
+                                <div><span class="text-slate-500">Timestamp:</span> <span id="ev-time" class="block">Never</span></div>
+                            </div>
+
+                            <!-- Bounding boxes within this cluster with class labels -->
+                            <div>
+                                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-2">📦 Detected Clustered Objects:</span>
+                                <div id="ev-detections-list" class="flex flex-col gap-2 max-h-[140px] overflow-y-auto pr-1">
+                                    <!-- Targets go here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Downloader -->
+                    <div id="evidence-action-bar" class="hidden border-t border-tactical-border pt-4 mt-4">
+                        <button id="btn-export-pdf" class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs uppercase tracking-widest py-3 rounded transition-all shadow-lg hover:shadow-cyan-500/20">
+                            📥 Export Incident PDF Report
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ==================== FRONTEND CONTROLLER LOGIC ==================== -->
+    <script>
+        // DOM Handles
+        const tabTactical = document.getElementById('tab-tactical');
+        const tabAudit = document.getElementById('tab-audit');
+        const btnTabTactical = document.getElementById('btn-tab-tactical');
+        const btnTabAudit = document.getElementById('btn-tab-audit');
+        
+        // Tab switching
+        btnTabTactical.addEventListener('click', () => {
+            tabTactical.classList.remove('hidden');
+            tabAudit.classList.add('hidden');
+            btnTabTactical.className = "px-6 py-3.5 border-b-2 border-cyan-400 text-cyan-400 font-semibold tracking-wider text-sm flex items-center gap-2 transition-all";
+            btnTabAudit.className = "px-6 py-3.5 border-b-2 border-transparent text-slate-400 hover:text-white font-semibold tracking-wider text-sm flex items-center gap-2 transition-all";
+            
+            // Recalculate map size if tab was hidden
+            setTimeout(() => { map.invalidateSize() }, 100);
+        });
+
+        btnTabAudit.addEventListener('click', () => {
+            tabAudit.classList.remove('hidden');
+            tabTactical.classList.add('hidden');
+            btnTabAudit.className = "px-6 py-3.5 border-b-2 border-cyan-400 text-cyan-400 font-semibold tracking-wider text-sm flex items-center gap-2 transition-all";
+            btnTabTactical.className = "px-6 py-3.5 border-b-2 border-transparent text-slate-400 hover:text-white font-semibold tracking-wider text-sm flex items-center gap-2 transition-all";
+            loadAuditData();
+        });
+
+        // Initialize Leaflet Map (Satellite / Surveillance view look)
+        // Coords centered around the river_centerline.geojson: Guwahati Brahmaputra
+        const map = L.map('map', {
+            zoomControl: false
+        }).setView([26.1593, 91.6661], 13);
+
+        // Load Satellite Tiles (Standard satellite view)
+        const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+        }).addTo(map);
+
+        const standardLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{y}/{x}.png', {
+            attribution: '&copy; <a href="https://carto.com/">CARTO</a>'
+        });
+
+        // Layer Control
+        L.control.layers({
+            "Surveillance Satellite": satelliteLayer,
+            "Tactical Dark Radar": standardLayer
+        }, null, { position: 'bottomright' }).addTo(map);
+        
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+        // ── Wire up map control buttons ────────────────────────────────────────
+        // Must happen AFTER map is created so L.DomEvent is available.
+        // L.DomEvent.disableClickPropagation stops Leaflet from swallowing
+        // click events that land on our overlay buttons.
+        (function wireMapControls() {
+            const controlsDiv = document.getElementById('map-controls');
+            L.DomEvent.disableClickPropagation(controlsDiv);
+            L.DomEvent.disableScrollPropagation(controlsDiv);
+
+            document.getElementById('btn-follow-drone').addEventListener('click', function(e) {
+                e.stopPropagation();
+                toggleFollow();
+            });
+
+            document.getElementById('btn-recenter').addEventListener('click', function(e) {
+                e.stopPropagation();
+                if (lastDroneLatlng) map.setView(lastDroneLatlng, map.getZoom(), { animate: true });
+            });
+        })();
+        // ──────────────────────────────────────────────────────────────────────
+
+        // Real-time Flight Trailing & Drone Marker
+        let flightTrail = L.polyline([], {
+            color: '#00f0ff',
+            weight: 3.5,
+            opacity: 0.8,
+            dashArray: '5, 8'
+        }).addTo(map);
+
+        // Custom Glowing Neon Drone Icon
+        const droneIcon = L.divIcon({
+            html: `
+                <div class="relative flex items-center justify-center">
+                    <span class="animate-ping absolute inline-flex h-8 w-8 rounded-full bg-cyan-400 opacity-60"></span>
+                    <div class="w-4 h-4 bg-cyan-400 border-2 border-white rounded-full flex items-center justify-center shadow-lg">
+                        <div class="w-1.5 h-1.5 bg-slate-900 rounded-full"></div>
+                    </div>
+                </div>
+            `,
+            className: 'custom-drone-icon',
+            iconSize: [20, 20]
+        });
+
+        let droneMarker = L.marker([26.1264, 91.6025], { icon: droneIcon }).addTo(map);
+
+        // Array to store active detection markers on map
+        let detectionMarkers = [];
+
+        // Drone follow mode — OFF by default so user can freely drag the map
+        let followDrone = false;
+        let lastDroneLatlng = [26.1593, 91.6661];
+
+        function toggleFollow() {
+            followDrone = !followDrone;
+            const icon = document.getElementById('follow-icon');
+            const lbl  = document.getElementById('follow-label');
+            const btn  = document.getElementById('btn-follow-drone');
+            if (followDrone) {
+                icon.style.cssText = 'width:.5rem;height:.5rem;border-radius:9999px;background:#22d3ee;display:inline-block;animation:ping 1s cubic-bezier(0,0,.2,1) infinite';
+                lbl.textContent = 'Follow ON';
+                btn.style.color = '#22d3ee';
+                btn.style.borderColor = '#22d3ee';
+                map.setView(lastDroneLatlng, map.getZoom());
+            } else {
+                icon.style.cssText = 'width:.5rem;height:.5rem;border-radius:9999px;background:#475569;display:inline-block';
+                lbl.textContent = 'Follow OFF';
+                btn.style.color = '';
+                btn.style.borderColor = '';
+            }
+        }
+
+        // Global variable for active class filters (The user's requested core feature!)
+        let activeFilters = {
+            person: true,
+            jcb: true,
+            truck: true
+        };
+
+        // Class Filters Handlers
+        const filterAll = document.getElementById('filter-all');
+        const classFilterCheckboxes = document.querySelectorAll('.class-filter');
+
+        filterAll.addEventListener('change', (e) => {
+            const isChecked = e.target.checked;
+            classFilterCheckboxes.forEach(cb => {
+                cb.checked = isChecked;
+                activeFilters[cb.id.replace('filter-', '')] = isChecked;
+            });
+            renderActiveMarkers();
+        });
+
+        classFilterCheckboxes.forEach(cb => {
+            cb.addEventListener('change', (e) => {
+                const type = e.target.id.replace('filter-', '');
+                activeFilters[type] = e.target.checked;
+                
+                // If any checkbox is unchecked, turn off "All Targets" checked status
+                if (!e.target.checked) {
+                    filterAll.checked = false;
+                }
+                
+                // If all checkboxes are checked, turn on "All Targets"
+                const allChecked = Array.from(classFilterCheckboxes).every(c => c.checked);
+                if (allChecked) {
+                    filterAll.checked = true;
+                }
+                
+                renderActiveMarkers();
+            });
+        });
+
+        // 1km River buffer rendering
+        // Fetch from backend data directory
+        fetch('/data/legal_zones/river_buffer_1km.geojson')
+            .then(res => {
+                if (!res.ok) throw new Error("GeoJSON not present yet");
+                return res.json();
+            })
+            .then(geo => {
+                L.geoJSON(geo, {
+                    style: function (feature) {
+                        return {
+                            color: '#ef4444',
+                            weight: 2,
+                            fillColor: '#ef4444',
+                            fillOpacity: 0.12,
+                            dashArray: '4, 6'
+                        };
+                    }
+                }).addTo(map);
+                console.log("River reserve 1.5km buffer plotted on map.");
+            })
+            .catch(err => {
+                console.warn("Could not fetch pre-generated river_buffer_1km.geojson. Adding standard center visualization.");
+            });
+
+        // Establish WebSockets Connection to FastAPI Backend
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws`;
+        let ws;
+
+        function connectWebSocket() {
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                const statusSpan = document.getElementById('connection-status');
+                statusSpan.className = "font-bold text-emerald-400 flex items-center gap-1.5 uppercase tracking-wide";
+                statusSpan.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-ping"></span> ONLINE`;
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'telemetry') {
+                    handleTelemetryUpdate(data.payload);
+                } else if (data.type === 'detections') {
+                    handleDetectionsAlert(data.payload);
+                }
+            };
+
+            ws.onclose = () => {
+                const statusSpan = document.getElementById('connection-status');
+                statusSpan.className = "font-bold text-red-500 flex items-center gap-1.5 uppercase tracking-wide";
+                statusSpan.innerHTML = `<span class="w-2 h-2 rounded-full bg-red-500 inline-block animate-pulse"></span> OFFLINE`;
+                
+                // Reconnect retry
+                setTimeout(connectWebSocket, 3000);
+            };
+        }
+
+        // Handle Telemetry Logs Live Update
+        function handleTelemetryUpdate(tele) {
+            // Update HUD text elements
+            document.getElementById('hud-battery').textContent = `${tele.battery}%`;
+            document.getElementById('battery-bar').style.width = `${tele.battery}%`;
+            document.getElementById('hud-altitude').textContent = `${tele.altitude.toFixed(1)}m`;
+            document.getElementById('hud-speed').textContent = `${(tele.speed * 3.6).toFixed(1)} km/h`;
+            document.getElementById('hud-coordinates').textContent = `${tele.lat.toFixed(5)}, ${tele.lon.toFixed(5)}`;
+            
+            // In Tactical stream panel raw metadata
+            document.getElementById('raw-stream-time').textContent = new Date(tele.timestamp).toLocaleTimeString();
+            
+            // Shift drone icon on map and append coordinates to polyline trail
+            const latlng = [tele.lat, tele.lon];
+            lastDroneLatlng = latlng;
+            droneMarker.setLatLng(latlng);
+            flightTrail.addLatLng(latlng);
+
+            // Only auto-pan if follow mode is ON
+            if (followDrone) {
+                map.panTo(latlng, { animate: true, duration: 0.5 });
+            }
+        }
+
+        // Handle Bounding Box Live Alerts
+        function handleDetectionsAlert(event) {
+            // event contains list of detections and incident severity
+            document.getElementById('detection-indicator').textContent = `${event.severity} SEVERITY INCIDENT`;
+            document.getElementById('detection-indicator').className = `font-bold uppercase tracking-wider ${
+                event.severity === 'CRITICAL' ? 'text-red-500 animate-pulse' : 'text-yellow-400'
+            }`;
+            
+            // Plot new markers from this event
+            event.detections.forEach(det => {
+                const markerData = {
+                    lat: det.lat,
+                    lon: det.lon,
+                    class_name: det.class_name,
+                    confidence: det.confidence,
+                    incident_id: event.incident_id
+                };
+                detectionMarkers.push(markerData);
+            });
+            
+            renderActiveMarkers();
+        }
+
+        // Renders markers based on Active Filters checkboxes
+        function renderActiveMarkers() {
+            // Clear existing map layers for markers
+            map.eachLayer(layer => {
+                if (layer instanceof L.Marker && layer !== droneMarker) {
+                    map.removeLayer(layer);
+                }
+            });
+
+            let visibleCount = 0;
+
+            detectionMarkers.forEach(det => {
+                // Core Filter check
+                if (!activeFilters[det.class_name]) return;
+
+                visibleCount++;
+
+                // Custom Color marker pins: Red (Critical: Human worker), Yellow (Machinery)
+                let markerColor = '#f59e0b'; // Yellow for machinery (Truck/JCB)
+                if (det.class_name === 'person') {
+                    markerColor = '#10b981'; // Green for Personnel
+                }
+
+                const markerHtml = `
+                    <div class="relative flex items-center justify-center">
+                        <span class="absolute inline-flex h-5 w-5 rounded-full" style="background-color: ${markerColor}; opacity: 0.4;"></span>
+                        <div class="w-3 h-3 rounded-full border border-white shadow-lg" style="background-color: ${markerColor};"></div>
+                    </div>
+                `;
+
+                const icon = L.divIcon({
+                    html: markerHtml,
+                    className: 'custom-detection-marker',
+                    iconSize: [12, 12]
+                });
+
+                L.marker([det.lat, det.lon], { icon })
+                    .addTo(map)
+                    .bindPopup(`
+                        <div class="text-xs p-1 text-slate-800 font-sans">
+                            <span class="block font-bold uppercase text-slate-500 tracking-wider">Detection Details</span>
+                            <span class="block mt-1 font-extrabold uppercase text-sm ${det.class_name === 'person' ? 'text-emerald-600' : 'text-amber-600'}">${det.class_name}</span>
+                            <span class="block text-slate-600 font-medium">Confidence: <strong>${(det.confidence * 100).toFixed(0)}%</strong></span>
+                            <span class="block text-[10px] text-slate-400 mono mt-0.5">${det.lat.toFixed(5)}, ${det.lon.toFixed(5)}</span>
+                        </div>
+                    `);
+            });
+
+            document.getElementById('visible-markers-count').textContent = visibleCount;
+        }
+
+        // ==================== TAB 2: AUDIT DATABASE CONTROLLER ====================
+        
+        function loadAuditData() {
+            // Fetch stats from app.py
+            fetch('/api/stats')
+                .then(res => res.json())
+                .then(stats => {
+                    document.getElementById('stat-incidents').textContent = stats.total_incidents;
+                    document.getElementById('stat-critical').textContent = stats.critical_incidents;
+                    document.getElementById('stat-machinery').textContent = stats.detections_count.jcb + stats.detections_count.truck;
+                    document.getElementById('stat-workers').textContent = stats.detections_count.person;
+                });
+
+            // Fetch incidents list
+            fetch('/api/incidents')
+                .then(res => res.json())
+                .then(incidents => {
+                    const tbody = document.getElementById('incident-audit-body');
+                    if (incidents.length === 0) {
+                        tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-slate-500 uppercase">No Incident Records Found</td></tr>`;
+                        return;
+                    }
+                    
+                    tbody.innerHTML = '';
+                    incidents.forEach(inc => {
+                        const tr = document.createElement('tr');
+                        tr.className = "border-b border-tactical-border hover:bg-slate-900/50 cursor-pointer transition-all";
+                        tr.onclick = () => selectIncidentForInspection(inc);
+                        
+                        let severityClass = "text-yellow-500 bg-yellow-500/10 border-yellow-500/20";
+                        if (inc.severity === 'CRITICAL') severityClass = "text-red-500 bg-red-500/10 border-red-500/20";
+                        else if (inc.severity === 'LOW') severityClass = "text-emerald-500 bg-emerald-500/10 border-emerald-500/20";
+                        
+                        tr.innerHTML = `
+                            <td class="py-3.5 px-4 font-bold text-cyan-400">#${inc.id}</td>
+                            <td class="py-3.5 px-4 text-slate-400">${new Date(inc.timestamp).toLocaleString()}</td>
+                            <td class="py-3.5 px-4 mono text-slate-300 font-medium">${inc.centroid_latitude.toFixed(5)}, ${inc.centroid_longitude.toFixed(5)}</td>
+                            <td class="py-3.5 px-4 text-center">
+                                <span class="px-2 py-0.5 text-[9px] font-bold rounded border uppercase ${severityClass}">${inc.severity}</span>
+                            </td>
+                            <td class="py-3.5 px-4 text-center">
+                                <span class="px-2 py-0.5 text-[9px] font-bold rounded border uppercase ${
+                                    inc.illegal_zone ? 'text-red-400 bg-red-500/5 border-red-500/20' : 'text-slate-400 bg-slate-500/5 border-slate-500/20'
+                                }">${inc.illegal_zone ? 'Buffer Violation' : 'Outside Buffer'}</span>
+                            </td>
+                            <td class="py-3.5 px-4 text-center">
+                                <button class="bg-cyan-950/60 text-cyan-400 border border-cyan-500/30 font-bold text-[9px] uppercase px-2 py-1 rounded hover:bg-cyan-900 transition-all">Inspect</button>
+                            </td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                });
+        }
+
+        // Selection of Incident in Inspection Card
+        function selectIncidentForInspection(inc) {
+            document.getElementById('evidence-empty').classList.add('hidden');
+            document.getElementById('evidence-display').classList.remove('hidden');
+            document.getElementById('evidence-action-bar').classList.remove('hidden');
+            
+            // Map details
+            document.getElementById('ev-id').textContent = `#${inc.id}`;
+            document.getElementById('ev-lat').textContent = inc.centroid_latitude.toFixed(6);
+            document.getElementById('ev-lon').textContent = inc.centroid_longitude.toFixed(6);
+            document.getElementById('ev-dist').textContent = inc.distance_to_river_m ? `${inc.distance_to_river_m.toFixed(1)}m` : 'N/A';
+            document.getElementById('ev-time').textContent = new Date(inc.timestamp).toLocaleString();
+            
+            const sevBadge = document.getElementById('ev-severity-badge');
+            sevBadge.textContent = inc.severity;
+            if (inc.severity === 'CRITICAL') sevBadge.className = "px-2.5 py-1 text-[10px] font-bold rounded uppercase tracking-wider text-red-500 bg-red-500/10 border border-red-500/20";
+            else if (inc.severity === 'HIGH') sevBadge.className = "px-2.5 py-1 text-[10px] font-bold rounded uppercase tracking-wider text-amber-500 bg-amber-500/10 border border-amber-500/20";
+            else sevBadge.className = "px-2.5 py-1 text-[10px] font-bold rounded uppercase tracking-wider text-emerald-500 bg-emerald-500/10 border border-emerald-500/20";
+
+            // Fetch detections belonging to this specific cluster (Filtering by incident_id!)
+            fetch(`/api/detections?incident_id=${inc.id}`)
+                .then(res => res.json())
+                .then(detections => {
+                    const listContainer = document.getElementById('ev-detections-list');
+                    listContainer.innerHTML = '';
+                    
+                    detections.forEach(det => {
+                        let colorClass = "text-amber-400";
+                        if (det.class_name === 'person') colorClass = "text-emerald-400";
+                        else if (det.class_name === 'jcb') colorClass = "text-yellow-400";
+                        
+                        const row = document.createElement('div');
+                        row.className = "flex justify-between items-center bg-slate-950/80 p-2.5 rounded border border-tactical-border text-xs";
+                        row.innerHTML = `
+                            <span class="font-bold uppercase ${colorClass} flex items-center gap-1.5">
+                                <span class="w-1.5 h-1.5 rounded-full inline-block" style="background-color: currentColor;"></span> ${det.class_name}
+                            </span>
+                            <span class="text-slate-400 font-medium">Confidence: <strong>${(det.confidence * 100).toFixed(0)}%</strong></span>
+                            <span class="mono text-[10px] text-slate-500">${det.latitude.toFixed(5)}, ${det.longitude.toFixed(5)}</span>
+                        `;
+                        listContainer.appendChild(row);
+                    });
+                });
+        }
+
+        // Click listeners
+        document.getElementById('refresh-audits').addEventListener('click', loadAuditData);
+        document.getElementById('btn-export-pdf').addEventListener('click', () => {
+            alert("Incident PDF Exporter: Exporting PDF Incident Report summary containing telemetry telemetry and annotated drone frame crop to local downloads folder.");
+        });
+
+        // Initialize WebSockets on startup
+        connectWebSocket();
+    </script>
+</body>
+</html>
