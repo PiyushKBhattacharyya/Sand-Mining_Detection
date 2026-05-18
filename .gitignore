@@ -1,2 +1,11 @@
+# Virtual environment
 .venv/
-data/detections
+
+# Detection output data
+data/detections/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd

@@ -19,28 +19,11 @@ if not venv_python.exists():
     # Fallback to standard python if venv isn't in expected location
     venv_python = "python"
 
-def rebuild_zones():
-    """Regenerates the river buffer GeoJSON from the latest centerline in-process."""
-    try:
-        import geopandas as gpd
-        warnings.filterwarnings("ignore", category=UserWarning)
-        centerline = project_root / "data" / "legal_zones" / "river_centerline.geojson"
-        output    = project_root / "data" / "legal_zones" / "river_buffer_1km.geojson"
-        if not centerline.exists():
-            logger.warning("Centerline not found — skipping buffer rebuild.")
-            return
-        gdf = gpd.read_file(str(centerline))
-        if str(gdf.crs) != "EPSG:4326":
-            gdf = gdf.to_crs("EPSG:4326")
-        gdf_m = gdf.to_crs("EPSG:32646")
-        # resolution=32 → 32 segments per quarter-circle → smooth curves that hug each meander
-        buf = gdf_m.geometry.buffer(1000, cap_style=2, join_style=1, resolution=32)
-        buf_gdf = gpd.GeoDataFrame(geometry=buf, crs="EPSG:32646").to_crs("EPSG:4326")
-        buf_gdf.to_file(str(output), driver="GeoJSON")
-        n_pts = len(list(gdf.iloc[0].geometry.coords))
-        logger.info(f"River buffer rebuilt: {n_pts} centerline points → {output.name}")
-    except Exception as e:
-        logger.error(f"Zone rebuild failed: {e}")
+def rebuild_zones(radius_m: float = 1000.0):
+    """Regenerates the river buffer GeoJSON from the latest centerline."""
+    sys.path.insert(0, str(project_root / "src" / "preprocess"))
+    from zone_builder import build_buffer
+    build_buffer(radius_m=radius_m)
 
 
 def run_server():

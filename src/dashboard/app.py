@@ -15,6 +15,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent / "preprocess"))
 sys.path.append(str(Path(__file__).resolve().parent.parent / "reporting"))
 from db_setup import DatabaseManager
 from pdf_generator import generate_incident_report
+from zone_builder import build_buffer
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -35,6 +36,9 @@ EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
 db_manager = DatabaseManager(db_type="sqlite")
 # Ensure DB is initialized
 db_manager.initialize_database()
+
+# Active buffer radius — starts at 1km, updated via /api/zone/radius
+active_buffer_radius_m: float = 1000.0
 
 # Store active websocket connections
 class ConnectionManager:
@@ -329,6 +333,47 @@ def get_evidence_image(filename: str):
         raise HTTPException(status_code=404, detail="Evidence image not found")
     with open(img_path, "rb") as f:
         return Response(content=f.read(), media_type="image/jpeg")
+
+
+@app.get("/api/zone/radius")
+def get_zone_radius():
+    """Returns the currently active buffer radius in metres."""
+    return {"radius_m": active_buffer_radius_m}
+
+
+@app.post("/api/zone/radius")
+async def set_zone_radius(data: Dict[str, Any]):
+    """
+    Updates the active zone enforcement radius.
+    1. Rebuilds river_buffer_1km.geojson with the new radius (server-side)
+    2. Broadcasts the change over WebSocket so:
+       - The browser map redraws its Turf.js buffer to match
+       - The Jetson sync_worker can detect the change and reload its ClusterEngine
+    """
+    global active_buffer_radius_m
+
+    radius_m = float(data.get("radius_m", 1000.0))
+    # Clamp to reasonable operational range
+    radius_m = max(250.0, min(radius_m, 5000.0))
+
+    # Rebuild GeoJSON with new radius (runs in thread pool so we don't block)
+    import asyncio
+    loop = asyncio.get_event_loop()
+    success = await loop.run_in_executor(None, build_buffer, radius_m)
+
+    if not success:
+        raise HTTPException(status_code=500, detail="Buffer rebuild failed — check centerline data")
+
+    active_buffer_radius_m = radius_m
+    logger.info(f"Zone radius updated to {radius_m:.0f}m by operator")
+
+    # Broadcast to all dashboard clients + Jetson sync_worker
+    await manager.broadcast({
+        "type": "zone_radius_update",
+        "payload": {"radius_m": radius_m}
+    })
+
+    return {"status": "ok", "radius_m": radius_m}
 
 
 # WebSocket endpoint

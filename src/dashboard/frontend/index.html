@@ -657,14 +657,33 @@
             L.DomEvent.disableClickPropagation(hudDiv);
             L.DomEvent.disableScrollPropagation(hudDiv);
 
+            // ── Sync radius to server (debounced — fires on slider release, not drag) ──
+            function pushRadiusToServer(radius_m) {
+                fetch('/api/zone/radius', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ radius_m })
+                })
+                .then(r => r.json())
+                .then(res => {
+                    console.log(`Zone enforcement updated to ${res.radius_m}m on server`);
+                })
+                .catch(err => console.warn('Zone radius sync failed:', err));
+            }
+
+            // 'input' → live map redraw (visual only, no server call while dragging)
             slider.addEventListener('input', function() {
                 drawBuffer(parseInt(this.value));
-                // Update active preset highlight
                 presets.forEach(b => {
                     const active = parseInt(b.dataset.km) === parseInt(this.value);
                     b.style.borderColor = active ? '#22d3ee' : '';
                     b.style.color       = active ? '#22d3ee' : '';
                 });
+            });
+
+            // 'change' → fires on mouseup/touchend → push to server ONCE per gesture
+            slider.addEventListener('change', function() {
+                pushRadiusToServer(parseInt(this.value));
             });
 
             presets.forEach(btn => {
@@ -673,6 +692,7 @@
                     const m = parseInt(this.dataset.km);
                     slider.value = m;
                     drawBuffer(m);
+                    pushRadiusToServer(m);
                     presets.forEach(b => {
                         const active = parseInt(b.dataset.km) === m;
                         b.style.borderColor = active ? '#22d3ee' : '';
@@ -680,6 +700,16 @@
                     });
                 });
             });
+
+            // Sync slider state from server on page load
+            fetch('/api/zone/radius')
+                .then(r => r.json())
+                .then(res => {
+                    slider.value = res.radius_m;
+                    // drawBuffer called after centerline loads
+                })
+                .catch(() => {});
+
         })();
         // ──────────────────────────────────────────────────────────────────────
 
@@ -704,6 +734,14 @@
                     handleTelemetryUpdate(data.payload);
                 } else if (data.type === 'detections') {
                     handleDetectionsAlert(data.payload);
+                } else if (data.type === 'zone_radius_update') {
+                    // Server rebuilt the zone — sync map buffer to match
+                    const r = data.payload.radius_m;
+                    const slider = document.getElementById('buffer-slider');
+                    if (slider && parseInt(slider.value) !== r) {
+                        slider.value = r;
+                        drawBuffer(r);
+                    }
                 }
             };
 

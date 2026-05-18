@@ -11,6 +11,7 @@ import sys
 # Add preprocess directory to import db_setup
 sys.path.append(str(Path(__file__).resolve().parent.parent / "preprocess"))
 from db_setup import DatabaseManager
+from zone_builder import build_buffer
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -46,6 +47,21 @@ class ClusterEngine:
             logger.info("Successfully loaded 1km River Buffer Zone.")
         except Exception as e:
             logger.error(f"Error loading buffer zone geometry: {e}")
+
+    def set_radius(self, radius_m: float):
+        """
+        Hot-reload the enforcement zone with a new radius (metres).
+        Called when the operator changes the slider on the dashboard.
+        Rebuilds the GeoJSON file then reloads the Shapely geometry in-memory
+        so all subsequent is_in_illegal_zone() calls use the new boundary.
+        """
+        logger.info(f"ClusterEngine: hot-reloading buffer at {radius_m:.0f}m")
+        ok = build_buffer(radius_m=radius_m)
+        if ok:
+            self._load_buffer_zone()   # reload Shapely geometry from updated file
+            logger.info(f"Zone enforcement updated to {radius_m:.0f}m")
+        else:
+            logger.warning("Buffer rebuild failed — keeping previous zone geometry")
 
     def is_in_illegal_zone(self, lat: float, lon: float) -> bool:
         """Returns True if the coordinate is inside the 500m buffer zone."""
