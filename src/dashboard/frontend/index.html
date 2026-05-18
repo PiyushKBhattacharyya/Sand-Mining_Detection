@@ -32,6 +32,8 @@
     <!-- Leaflet.js CSS and JS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Turf.js — client-side spatial analysis for dynamic buffer drawing -->
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
     
     <style>
         body {
@@ -249,14 +251,39 @@
             <div class="lg:col-span-5 flex flex-col min-h-0">
                 <div class="glass-panel rounded-lg overflow-hidden flex flex-col border border-tactical-border h-full relative">
                     <!-- Map HUD Details -->
-                    <div class="absolute top-3 left-3 bg-slate-950/80 px-3 py-2 rounded border border-white/10 z-[1000] text-xs max-w-[240px] pointer-events-none">
-                        <span class="text-slate-400 font-bold block mb-1">🛰️ SATELLITE RADAR</span>
+                    <div id="map-hud" class="absolute top-3 left-3 bg-slate-950/85 px-3 py-2.5 rounded-lg border border-white/10 z-[1001] text-xs w-[220px]">
+                        <span class="text-slate-400 font-bold block mb-1">&#128752; SATELLITE RADAR</span>
                         <div class="text-[10px] text-cyan-400 flex items-center gap-1.5 uppercase font-bold">
                             <span class="w-2 h-2 rounded bg-cyan-400 inline-block animate-ping"></span> Live Tracking Active
                         </div>
-                        <div class="mt-2 text-[10px] text-slate-400 border-t border-slate-800 pt-2 flex flex-col gap-1">
-                            <div class="flex justify-between"><span>Active Zone:</span><span class="text-red-400 font-semibold">1km Buffer</span></div>
-                            <div class="flex justify-between"><span>Detections Visible:</span><span class="text-white" id="visible-markers-count">0</span></div>
+                        <div class="mt-2 text-[10px] text-slate-400 border-t border-slate-800 pt-2 flex flex-col gap-1.5">
+                            <div class="flex justify-between items-center">
+                                <span>Active Zone:</span>
+                                <span id="active-zone-label" class="text-red-400 font-semibold">1.0 km Buffer</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span>Detections Visible:</span>
+                                <span class="text-white" id="visible-markers-count">0</span>
+                            </div>
+                            <!-- Dynamic Buffer Radius Control -->
+                            <div class="border-t border-slate-800 pt-2 mt-1">
+                                <div class="flex justify-between items-center mb-1">
+                                    <span class="text-slate-500 uppercase tracking-wide text-[9px]">Buffer Radius</span>
+                                    <span id="buffer-km-label" class="text-cyan-300 font-bold text-[10px]">1.0 km</span>
+                                </div>
+                                <input id="buffer-slider" type="range"
+                                    min="250" max="3000" step="250" value="1000"
+                                    class="w-full h-1 rounded-lg appearance-none cursor-pointer"
+                                    style="accent-color:#22d3ee;">
+                                <!-- Quick presets -->
+                                <div class="flex gap-1 mt-1.5 flex-wrap">
+                                    <button data-km="500"  class="buf-preset text-[8px] px-1.5 py-0.5 rounded border border-slate-700 text-slate-400 hover:border-cyan-400 hover:text-cyan-400 cursor-pointer transition-all">0.5km</button>
+                                    <button data-km="1000" class="buf-preset text-[8px] px-1.5 py-0.5 rounded border border-cyan-500 text-cyan-400 cursor-pointer transition-all">1km</button>
+                                    <button data-km="1500" class="buf-preset text-[8px] px-1.5 py-0.5 rounded border border-slate-700 text-slate-400 hover:border-cyan-400 hover:text-cyan-400 cursor-pointer transition-all">1.5km</button>
+                                    <button data-km="2000" class="buf-preset text-[8px] px-1.5 py-0.5 rounded border border-slate-700 text-slate-400 hover:border-cyan-400 hover:text-cyan-400 cursor-pointer transition-all">2km</button>
+                                    <button data-km="3000" class="buf-preset text-[8px] px-1.5 py-0.5 rounded border border-slate-700 text-slate-400 hover:border-cyan-400 hover:text-cyan-400 cursor-pointer transition-all">3km</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -559,30 +586,93 @@
             });
         });
 
-        // 1km River buffer rendering
-        // Fetch from backend data directory
-        fetch('/data/legal_zones/river_buffer_1km.geojson')
-            .then(res => {
-                if (!res.ok) throw new Error("GeoJSON not present yet");
-                return res.json();
-            })
-            .then(geo => {
-                L.geoJSON(geo, {
-                    style: function (feature) {
-                        return {
-                            color: '#ef4444',
-                            weight: 2,
-                            fillColor: '#ef4444',
-                            fillOpacity: 0.12,
-                            dashArray: '4, 6'
-                        };
-                    }
-                }).addTo(map);
-                console.log("River reserve 1.5km buffer plotted on map.");
+        // ── Dynamic Buffer via Turf.js ─────────────────────────────────────────
+        // Loads river centerline once, then redraws buffer client-side on demand.
+        let bufferLayer = null;        // Current Leaflet GeoJSON layer for buffer
+        let centerlineGeoJSON = null;  // Cached centerline feature
+        let currentBufferM = 1000;     // Current radius in metres
+
+        function drawBuffer(radiusM) {
+            if (!centerlineGeoJSON) return;
+            currentBufferM = radiusM;
+
+            // Turf.js buffer — units: 'kilometers'
+            const buffered = turf.buffer(centerlineGeoJSON, radiusM / 1000, { units: 'kilometers', steps: 32 });
+
+            // Remove old layer
+            if (bufferLayer) map.removeLayer(bufferLayer);
+
+            // Draw new layer
+            bufferLayer = L.geoJSON(buffered, {
+                style: {
+                    color: '#ef4444',
+                    weight: 2,
+                    fillColor: '#ef4444',
+                    fillOpacity: 0.13,
+                    dashArray: '4, 6'
+                }
+            }).addTo(map);
+
+            // Update HUD labels
+            const km = (radiusM / 1000).toFixed(radiusM % 1000 === 0 ? 0 : 1);
+            document.getElementById('active-zone-label').textContent = `${km} km Buffer`;
+            document.getElementById('buffer-km-label').textContent   = `${(radiusM/1000).toFixed(1)} km`;
+        }
+
+        // Fetch centerline (lightweight — only fetched once)
+        fetch('/data/legal_zones/river_centerline.geojson')
+            .then(r => { if (!r.ok) throw new Error('Centerline unavailable'); return r.json(); })
+            .then(gj => {
+                centerlineGeoJSON = gj;
+                drawBuffer(1000); // Draw default 1km buffer on load
             })
             .catch(err => {
-                console.warn("Could not fetch pre-generated river_buffer_1km.geojson. Adding standard center visualization.");
+                console.warn('Could not load centerline for dynamic buffer:', err);
+                // Fallback: try to load the pre-generated static buffer
+                fetch('/data/legal_zones/river_buffer_1km.geojson')
+                    .then(r => r.json())
+                    .then(geo => {
+                        bufferLayer = L.geoJSON(geo, {
+                            style: { color:'#ef4444', weight:2, fillColor:'#ef4444', fillOpacity:0.12, dashArray:'4, 6' }
+                        }).addTo(map);
+                    }).catch(() => {});
             });
+
+        // Wire buffer slider + preset buttons AFTER map is ready
+        (function wireBufferControls() {
+            const hudDiv  = document.getElementById('map-hud');
+            const slider  = document.getElementById('buffer-slider');
+            const presets = document.querySelectorAll('.buf-preset');
+
+            // Tell Leaflet not to eat events on the HUD panel
+            L.DomEvent.disableClickPropagation(hudDiv);
+            L.DomEvent.disableScrollPropagation(hudDiv);
+
+            slider.addEventListener('input', function() {
+                drawBuffer(parseInt(this.value));
+                // Update active preset highlight
+                presets.forEach(b => {
+                    const active = parseInt(b.dataset.km) === parseInt(this.value);
+                    b.style.borderColor = active ? '#22d3ee' : '';
+                    b.style.color       = active ? '#22d3ee' : '';
+                });
+            });
+
+            presets.forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const m = parseInt(this.dataset.km);
+                    slider.value = m;
+                    drawBuffer(m);
+                    presets.forEach(b => {
+                        const active = parseInt(b.dataset.km) === m;
+                        b.style.borderColor = active ? '#22d3ee' : '';
+                        b.style.color       = active ? '#22d3ee' : '';
+                    });
+                });
+            });
+        })();
+        // ──────────────────────────────────────────────────────────────────────
 
         // Establish WebSockets Connection to FastAPI Backend
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';

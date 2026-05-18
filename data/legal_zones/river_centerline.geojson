@@ -10,7 +10,8 @@
         "resolution_m": 30,
         "point_count": 160,
         "ordered": true,
-        "gap_filled": true
+        "gap_filled": true,
+        "fix": "lon_sorted_gap_filled"
       },
       "geometry": {
         "type": "LineString",
