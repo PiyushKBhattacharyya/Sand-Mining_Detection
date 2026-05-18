@@ -26,6 +26,8 @@ from db_setup import DatabaseManager
 from drone_simulator import DroneSimulator
 from gps_projector import pixel_to_gps
 from cluster_engine import ClusterEngine
+from evidence_engine import save_incident_evidence
+from sync_worker import SyncWorker
 
 class EdgePipeline:
     """
@@ -49,6 +51,13 @@ class EdgePipeline:
         
         self.running = False
         self.frame_w, self.frame_h = 1920, 1080  # 1080p canvas for performance
+
+        # Offline-first sync worker — starts as daemon, retries with backoff
+        self.sync_worker = SyncWorker(
+            db_manager=self.db_manager,
+            cloud_url=self.cloud_url,
+            sync_interval_s=5.0
+        )
 
     def generate_simulated_detections(self, drone_lat: float, drone_lon: float, step: int) -> List[Dict[str, Any]]:
         """
@@ -209,6 +218,9 @@ class EdgePipeline:
         """Runs the entire edge-cloud streaming simulation loop."""
         self.running = True
         logger.info(f"Edge Computing Pipeline started on Jetson Nano. Cloud Sync: {self.cloud_url}")
+
+        # Start the resilient offline-first background sync worker
+        self.sync_worker.start()
         
         conn = self.db_manager.get_connection()
         cursor = conn.cursor()
@@ -281,7 +293,36 @@ class EdgePipeline:
                 # 4. Generate Video Feeds (Raw vs Overlay)
                 raw_jpeg, overlay_jpeg = self.draw_edge_overlay_canvas(telemetry_dict, raw_detections, step)
 
-                # 5. Cloud Streaming & WebSocket Sync relays
+                # 5. Save Evidence Snapshots to Jetson SSD (offline-first, always runs)
+                if incidents:
+                    # Decode overlay jpeg back to numpy for cropping
+                    overlay_np = cv2.imdecode(np.frombuffer(overlay_jpeg, np.uint8), cv2.IMREAD_COLOR)
+                    for inc in incidents:
+                        evidence_paths = save_incident_evidence(
+                            annotated_frame=overlay_np,
+                            incident=inc,
+                            telemetry=telemetry_dict
+                        )
+                        # Update incident record with first evidence image path
+                        if evidence_paths:
+                            inc['evidence_image_path'] = evidence_paths[0]
+                            try:
+                                ev_conn = self.db_manager.get_connection()
+                                ev_cur  = ev_conn.cursor()
+                                ph = '?' if self.db_manager.db_type == 'sqlite' else '%s'
+                                ev_cur.execute(
+                                    f"UPDATE incidents SET evidence_image_path = {ph} "
+                                    f"WHERE id = (SELECT MAX(id) FROM incidents WHERE "
+                                    f"ABS(centroid_latitude - {inc['centroid_lat']}) < 0.0001)",
+                                    (evidence_paths[0],)
+                                )
+                                ev_conn.commit()
+                                ev_cur.close()
+                                ev_conn.close()
+                            except Exception as e:
+                                logger.debug(f"Evidence path DB update: {e}")
+
+                # 6. Cloud Streaming (best-effort — sync_worker handles reliable retry)
                 # Try to POST real-time frames & telemetry updates to FastAPI server
                 try:
                     # Upload Raw Video Frame

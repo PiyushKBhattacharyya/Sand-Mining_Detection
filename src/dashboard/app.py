@@ -1,9 +1,10 @@
 import os
 import json
+import base64
 import logging
 from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, HTTPException, Request
-from fastapi.responses import StreamingResponse, HTMLResponse
+from fastapi.responses import StreamingResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 import asyncio
@@ -11,7 +12,9 @@ import sys
 
 # Import database manager
 sys.path.append(str(Path(__file__).resolve().parent.parent / "preprocess"))
+sys.path.append(str(Path(__file__).resolve().parent.parent / "reporting"))
 from db_setup import DatabaseManager
+from pdf_generator import generate_incident_report
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -23,6 +26,10 @@ app = FastAPI(
 
 # Mount the project's data directory so the frontend can directly load spatial GeoJSON files
 app.mount("/data", StaticFiles(directory=str(Path(__file__).resolve().parent.parent.parent / "data")), name="data")
+
+# Evidence directory — also served as static for UI image display
+EVIDENCE_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "detections"
+EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Connect to database
 db_manager = DatabaseManager(db_type="sqlite")
@@ -114,8 +121,26 @@ async def receive_edge_sync(data: Dict[str, Any]):
     """
     Receives real-time telemetry logs, detections, and alerts from the Jetson Nano
     and broadcasts them immediately to the operator dashboard via WebSockets.
+    Also handles base64-encoded evidence images from the offline sync worker.
     """
     logger.info(f"Sync event received. Type: {data.get('type')}")
+
+    # If payload contains a base64 evidence image, decode and save it cloud-side
+    payload = data.get("payload", {})
+    img_b64 = payload.pop("evidence_image_b64", None)
+    if img_b64:
+        try:
+            inc_id   = payload.get("incident_id", "unknown")
+            img_data = base64.b64decode(img_b64)
+            img_path = EVIDENCE_DIR / f"cloud_evidence_{inc_id}.jpg"
+            with open(img_path, "wb") as f:
+                f.write(img_data)
+            payload["evidence_image_path"] = str(img_path.relative_to(
+                Path(__file__).resolve().parent.parent.parent
+            ))
+        except Exception as e:
+            logger.warning(f"Could not save evidence image: {e}")
+
     # Broadcast to all open dashboards
     await manager.broadcast(data)
     return {"status": "ok"}
@@ -251,6 +276,60 @@ def get_dashboard_stats():
     finally:
         cursor.close()
         conn.close()
+
+@app.get("/api/report/pdf")
+def export_pdf_report(severity: Optional[str] = Query(None, description="Filter by severity"),
+                      mission_id: str = Query("BRH-01", description="Mission identifier")):
+    """
+    Generates and streams a PDF incident report.
+    Includes incident table, evidence gallery, and GPS coordinate appendix.
+    """
+    conn   = db_manager.get_connection()
+    cursor = conn.cursor()
+    try:
+        query  = "SELECT id, timestamp, centroid_latitude, centroid_longitude, severity, illegal_zone, distance_to_river_m, evidence_image_path FROM incidents"
+        params = []
+        if severity:
+            ph = "?" if db_manager.db_type == "sqlite" else "%s"
+            query += f" WHERE severity = {ph}"
+            params.append(severity.upper())
+        query += " ORDER BY id DESC"
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        incidents = [{
+            "id":                  r[0],
+            "timestamp":           r[1],
+            "centroid_latitude":   r[2],
+            "centroid_longitude":  r[3],
+            "severity":            r[4],
+            "illegal_zone":        bool(r[5]),
+            "distance_to_river_m": r[6],
+            "evidence_image_path": r[7]
+        } for r in rows]
+    finally:
+        cursor.close()
+        conn.close()
+
+    pdf_bytes = generate_incident_report(incidents=incidents, mission_id=mission_id)
+    from datetime import datetime
+    ts = datetime.now().strftime("%Y%m%d_%H%M")
+    filename = f"sand_mining_report_{mission_id}_{ts}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+
+@app.get("/api/evidence/{filename}")
+def get_evidence_image(filename: str):
+    """Serves a specific evidence JPEG image by filename."""
+    img_path = EVIDENCE_DIR / filename
+    if not img_path.exists() or not filename.endswith(".jpg"):
+        raise HTTPException(status_code=404, detail="Evidence image not found")
+    with open(img_path, "rb") as f:
+        return Response(content=f.read(), media_type="image/jpeg")
+
 
 # WebSocket endpoint
 @app.websocket("/ws")

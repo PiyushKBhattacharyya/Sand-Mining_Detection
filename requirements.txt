@@ -15,3 +15,5 @@ uvicorn>=0.28.0
 psycopg2-binary>=2.9.9
 requests>=2.31.0
 websockets>=12.0
+fpdf2>=2.7.9
+Pillow>=10.0.0
