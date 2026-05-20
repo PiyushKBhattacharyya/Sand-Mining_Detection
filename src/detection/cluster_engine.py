@@ -173,12 +173,12 @@ class ClusterEngine:
         # SQL insert statements
         insert_incident_sql = """
         INSERT INTO incidents (
-            centroid_latitude, centroid_longitude, severity, illegal_zone, synced_to_cloud
-        ) VALUES (%s, %s, %s, %s, 0) RETURNING id;
+            centroid_latitude, centroid_longitude, severity, illegal_zone, evidence_image_path, synced_to_cloud
+        ) VALUES (%s, %s, %s, %s, %s, 0) RETURNING id;
         """ if is_pg else """
         INSERT INTO incidents (
-            centroid_latitude, centroid_longitude, severity, illegal_zone, synced_to_cloud
-        ) VALUES (?, ?, ?, ?, 0);
+            centroid_latitude, centroid_longitude, severity, illegal_zone, evidence_image_path, synced_to_cloud
+        ) VALUES (?, ?, ?, ?, ?, 0);
         """
         
         insert_detection_sql = """
@@ -202,7 +202,8 @@ class ClusterEngine:
                     inc['centroid_lat'],
                     inc['centroid_lon'],
                     inc['severity'],
-                    inc['illegal_zone']
+                    inc['illegal_zone'],
+                    inc.get('evidence_image_path', None)
                 )
                 
                 cursor.execute(insert_incident_sql, inc_params)

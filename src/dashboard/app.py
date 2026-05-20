@@ -15,6 +15,7 @@ import sys
 # Import database manager
 sys.path.append(str(Path(__file__).resolve().parent.parent / "preprocess"))
 sys.path.append(str(Path(__file__).resolve().parent.parent / "reporting"))
+sys.path.append(str(Path(__file__).resolve().parent.parent / "detection"))
 from db_setup import DatabaseManager
 from pdf_generator import generate_incident_report
 from zone_builder import build_buffer
@@ -70,7 +71,7 @@ def _video_capture_loop():
 
     No restart needed — just change VIDEO_SOURCE and reboot the server.
     """
-    global latest_raw_frame, latest_overlay_frame
+    global latest_raw_frame, latest_overlay_frame, latest_webcam_detections
 
     try:
         import cv2
@@ -153,11 +154,29 @@ def _video_capture_loop():
                 overlay = results[0].plot()   # annotated BGR numpy array
                 _, obuf = cv2.imencode(".jpg", overlay, encode_params)
                 latest_overlay_frame = obuf.tobytes()
+
+                # Extract and store bounding box details globally for hybrid telemetry mapping
+                active_dets = []
+                if len(results[0].boxes) > 0:
+                    for box in results[0].boxes:
+                        coords = box.xyxy[0].tolist()
+                        conf = float(box.conf[0].item())
+                        active_dets.append({
+                            'class_name': 'person',
+                            'confidence': conf,
+                            'bbox_x_min': int(coords[0]),
+                            'bbox_y_min': int(coords[1]),
+                            'bbox_x_max': int(coords[2]),
+                            'bbox_y_max': int(coords[3])
+                        })
+                latest_webcam_detections = active_dets
             except Exception as exc:
                 logger.debug(f"YOLO inference error: {exc}")
                 latest_overlay_frame = jpeg   # fallback: show raw if inference crashes
+                latest_webcam_detections = []
         else:
             latest_overlay_frame = jpeg   # no model loaded — mirror raw feed
+            latest_webcam_detections = []
 
         elapsed = time.time() - t0
         sleep_for = interval - elapsed
@@ -209,9 +228,224 @@ manager = ConnectionManager()
 # which are then distributed to the dashboard HTML IMG tags.
 latest_raw_frame: bytes = b""
 latest_overlay_frame: bytes = b""
+latest_webcam_detections: List[Dict[str, Any]] = []
 
 # Holds the loaded YOLO model — set once at startup, used in _video_capture_loop
 _yolo_model = None
+
+# Global ClusterEngine for runtime buffer size synchronization
+global_cluster_engine = None
+
+async def _webcam_telemetry_simulation_loop():
+    global latest_webcam_detections, db_manager, active_buffer_radius_m, global_cluster_engine
+    
+    # Wait for the app to start up fully
+    await asyncio.sleep(2.0)
+    
+    from cluster_engine import ClusterEngine
+    import random
+    import math
+    from datetime import datetime
+    
+    # Initialize server-side cluster engine and save to global variable
+    global_cluster_engine = ClusterEngine(db_manager=db_manager)
+    # Ensure buffer is in sync with UI slider on startup
+    global_cluster_engine.set_radius(active_buffer_radius_m)
+    
+    # Load and interpolate centerline
+    centerline_path = Path(__file__).resolve().parent.parent.parent / "data" / "legal_zones" / "river_centerline.geojson"
+    if not centerline_path.exists():
+        logger.error(f"Centerline not found for hybrid simulation: {centerline_path}")
+        return
+        
+    try:
+        with open(centerline_path, 'r') as f:
+            cl_data = json.load(f)
+    except Exception as e:
+        logger.error(f"Error loading centerline for hybrid simulation: {e}")
+        return
+        
+    raw_coords = cl_data['features'][0]['geometry']['coordinates']
+    flight_points = []
+    speed_mps = 42.0 / 3.6
+    
+    for i in range(len(raw_coords) - 1):
+        lon1, lat1 = raw_coords[i]
+        lon2, lat2 = raw_coords[i+1]
+        lat_mid = (lat1 + lat2) / 2.0
+        dy = (lat2 - lat1) * 111320
+        dx = (lon2 - lon1) * 111320 * math.cos(math.radians(lat_mid))
+        distance = math.sqrt(dx**2 + dy**2)
+        # Generate steps at 3 Hz
+        steps = max(10, int(distance / (speed_mps / 3.0)))
+        
+        for step in range(steps):
+            t = step / steps
+            interp_lon = lon1 + (lon2 - lon1) * t
+            interp_lat = lat1 + (lat2 - lat1) * t
+            
+            weave_phase = (i * steps + step) * 0.05
+            # Weave up to 1800m laterally so the drone continuously flies IN and OUT of the buffer zone
+            lateral_offset_meters = math.sin(weave_phase) * 1800.0
+            
+            heading = math.atan2(dy, dx)
+            perp_angle = heading + math.pi / 2.0
+            
+            offset_lat = (lateral_offset_meters * math.sin(perp_angle)) / 111320
+            offset_lon = (lateral_offset_meters * math.cos(perp_angle)) / (111320 * math.cos(math.radians(interp_lat)))
+            
+            final_lat = interp_lat + offset_lat
+            final_lon = interp_lon + offset_lon
+            heading_deg = (90.0 - math.degrees(heading)) % 360.0
+            
+            flight_points.append({
+                'lat': final_lat,
+                'lon': final_lon,
+                'heading': heading_deg
+            })
+            
+    logger.info(f"🚀 Hybrid simulation generated {len(flight_points)} waypoints.")
+    
+    step = 0
+    battery = 100.0
+    
+    insert_telemetry_sql = """
+    INSERT INTO telemetry_logs (
+        timestamp, latitude, longitude, altitude_agl, 
+        gimbal_pitch, gimbal_yaw, gimbal_roll, 
+        drone_speed, battery_percentage, gps_accuracy_m
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    """
+    
+    while True:
+        try:
+            if not flight_points:
+                await asyncio.sleep(1.0)
+                continue
+                
+            point_idx = step % len(flight_points)
+            point = flight_points[point_idx]
+            
+            lat, lon = point['lat'], point['lon']
+            alt = 70.0 + random.uniform(-1.0, 1.0)
+            speed = speed_mps
+            heading = point['heading']
+            battery = max(0.0, battery - 0.02)
+            if battery <= 0:
+                battery = 100.0
+                
+            timestamp = datetime.now().isoformat()
+            
+            # Save Telemetry Locally to database
+            loop = asyncio.get_event_loop()
+            
+            def save_telemetry_db():
+                conn = db_manager.get_connection()
+                cursor = conn.cursor()
+                cursor.execute(insert_telemetry_sql, (
+                    timestamp, lat, lon, alt, -80.0, heading, 0.0, speed, int(battery), 0.15
+                ))
+                t_id = cursor.lastrowid
+                conn.commit()
+                cursor.close()
+                conn.close()
+                return t_id
+                
+            telemetry_id = await loop.run_in_executor(None, save_telemetry_db)
+            
+            # Broadcast telemetry to WebSockets
+            telemetry_payload = {
+                "type": "telemetry",
+                "payload": {
+                    "timestamp": timestamp,
+                    "lat": lat,
+                    "lon": lon,
+                    "altitude": alt,
+                    "speed": speed,
+                    "battery": int(battery)
+                }
+            }
+            await manager.broadcast(telemetry_payload)
+            
+            # ── Process active webcam detections mapped to this GPS location! ──
+            active_dets = list(latest_webcam_detections)
+            if active_dets:
+                mapped_dets = []
+                for idx, det in enumerate(active_dets):
+                    # Add a tiny random coordinate offset on the ground (e.g. up to 30m)
+                    offset_lat = random.uniform(-0.0002, 0.0002)
+                    offset_lon = random.uniform(-0.0002, 0.0002)
+                    
+                    mapped_dets.append({
+                        'class_name': det['class_name'],
+                        'confidence': det['confidence'],
+                        'bbox_x_min': det['bbox_x_min'],
+                        'bbox_y_min': det['bbox_y_min'],
+                        'bbox_x_max': det['bbox_x_max'],
+                        'bbox_y_max': det['bbox_y_max'],
+                        'lat': lat + offset_lat,
+                        'lon': lon + offset_lon
+                    })
+                    
+                # Run cluster engine on mapped detections
+                raw_incidents = global_cluster_engine.cluster_detections(mapped_dets, eps_meters=60.0)
+                
+                # FILTER: Only keep incidents inside the enforcement boundaries (illegal_zone == 1)
+                incidents = [inc for inc in raw_incidents if inc.get('illegal_zone', 0) == 1]
+                
+                if incidents:
+                    # Save crop snapshot of the webcam feed as dynamic evidence!
+                    try:
+                        import cv2
+                        import numpy as np
+                        from evidence_engine import save_incident_evidence
+                        
+                        frame_bytes = latest_overlay_frame
+                        if frame_bytes:
+                            nparr = np.frombuffer(frame_bytes, np.uint8)
+                            frame_np = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                            if frame_np is not None:
+                                for inc in incidents:
+                                    # Mock the incident id for the file naming format
+                                    inc['incident_id'] = step + 5000
+                                    inc['detections'] = mapped_dets
+                                    
+                                    evidence_paths = save_incident_evidence(
+                                        annotated_frame=frame_np,
+                                        incident=inc,
+                                        telemetry={'lat': lat, 'lon': lon}
+                                    )
+                                    if evidence_paths:
+                                        inc['evidence_image_path'] = evidence_paths[0]
+                    except Exception as e:
+                        logger.error(f"Error generating hybrid evidence snapshot: {e}")
+
+                    # Save incidents to DB
+                    def save_incidents_db():
+                        global_cluster_engine.save_incidents_to_db(incidents, telemetry_log_id=telemetry_id)
+                    await loop.run_in_executor(None, save_incidents_db)
+                    
+                    # Broadcast detection warning alerts immediately
+                    for inc in incidents:
+                        await manager.broadcast({
+                            "type": "detections",
+                            "payload": {
+                                "incident_id": step + 5000,
+                                "severity": inc['severity'],
+                                "centroid_latitude": inc['centroid_lat'],
+                                "centroid_longitude": inc['centroid_lon'],
+                                "detections": inc['detections']
+                            }
+                        })
+            
+            step += 1
+            # Run at 3 Hz (approx 0.33s per step)
+            await asyncio.sleep(0.33)
+            
+        except Exception as e:
+            logger.error(f"Error in hybrid telemetry loop: {e}")
+            await asyncio.sleep(1.0)
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -245,6 +479,11 @@ async def startup_event():
     t.start()
     source_desc = f"RTSP: {VIDEO_SOURCE}" if isinstance(VIDEO_SOURCE, str) else f"webcam {VIDEO_SOURCE}"
     logger.info(f"🎥  Video capture thread launched ({source_desc}) — dashboard feeds will populate shortly.")
+
+    # Start the hybrid telemetry simulation loop if we are using the webcam (testing mode)
+    if isinstance(VIDEO_SOURCE, int):
+        asyncio.create_task(_webcam_telemetry_simulation_loop())
+        logger.info("🛰️ Launched dynamic hybrid flight telemetry simulator background task.")
 
 # Frame generator for multipart MJPEG streaming
 async def frame_generator(stream_type: str):
@@ -525,19 +764,26 @@ async def set_zone_radius(data: Dict[str, Any]):
        - The browser map redraws its Turf.js buffer to match
        - The Jetson sync_worker can detect the change and reload its ClusterEngine
     """
-    global active_buffer_radius_m
+    global active_buffer_radius_m, global_cluster_engine
 
     radius_m = float(data.get("radius_m", 1000.0))
     # Clamp to reasonable operational range
     radius_m = max(250.0, min(radius_m, 5000.0))
 
-    # Rebuild GeoJSON with new radius (runs in thread pool so we don't block)
+    # Rebuild GeoJSON and reload in-memory via global ClusterEngine (runs in thread pool)
     import asyncio
-    loop = asyncio.get_event_loop()
-    success = await loop.run_in_executor(None, build_buffer, radius_m)
-
-    if not success:
-        raise HTTPException(status_code=500, detail="Buffer rebuild failed — check centerline data")
+    if global_cluster_engine is not None:
+        loop = asyncio.get_event_loop()
+        def reload_engine():
+            global_cluster_engine.set_radius(radius_m)
+        await loop.run_in_executor(None, reload_engine)
+    else:
+        # Fallback if engine is not initialized yet
+        from preprocess.zone_builder import build_buffer
+        loop = asyncio.get_event_loop()
+        success = await loop.run_in_executor(None, build_buffer, radius_m)
+        if not success:
+            raise HTTPException(status_code=500, detail="Buffer rebuild failed — check centerline data")
 
     active_buffer_radius_m = radius_m
     logger.info(f"Zone radius updated to {radius_m:.0f}m by operator")

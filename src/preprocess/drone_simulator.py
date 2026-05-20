@@ -69,7 +69,8 @@ class DroneSimulator:
                 # Add a lateral sinusoidal weave to simulate panning/sweeping the riverbed
                 # Toggles between left and right of the river up to 120 meters
                 weave_phase = (i * steps + step) * 0.05
-                lateral_offset_meters = math.sin(weave_phase) * 120.0
+                # Weave up to 1800 meters laterally so the drone continuously flies IN and OUT of the buffer zone
+                lateral_offset_meters = math.sin(weave_phase) * 1800.0
                 
                 # Calculate heading angle
                 heading = math.atan2(dy, dx)
