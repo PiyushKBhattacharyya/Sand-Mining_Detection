@@ -138,15 +138,26 @@ def _video_capture_loop():
         latest_raw_frame = jpeg
 
         # ── DETECTION HOOK ────────────────────────────────────────────────
-        # Overlay feed: plug your YOLO detection code in here.
-        # `frame` is the raw BGR numpy array — draw bounding boxes on it,
-        # then re-encode and assign to latest_overlay_frame.
-        # Example (replace with real inference):
-        #   results      = yolo_model(frame)
-        #   overlay      = results[0].plot()   # annotated frame
-        #   _, obuf      = cv2.imencode(".jpg", overlay, encode_params)
-        #   latest_overlay_frame = obuf.tobytes()
-        latest_overlay_frame = jpeg   # same as raw until detection is wired in
+        # Person-only detection (COCO class 0).
+        # Replace _yolo_model with your custom model by dropping best.pt
+        # into models/weights/ — it auto-loads at startup.
+        if _yolo_model is not None:
+            try:
+                results = _yolo_model(
+                    frame,
+                    verbose=False,
+                    classes=[0],    # 0 = person in COCO; swap for your custom class IDs later
+                    conf=0.30,      # confidence threshold — lower = catches more detections
+                    iou=0.45,
+                )
+                overlay = results[0].plot()   # annotated BGR numpy array
+                _, obuf = cv2.imencode(".jpg", overlay, encode_params)
+                latest_overlay_frame = obuf.tobytes()
+            except Exception as exc:
+                logger.debug(f"YOLO inference error: {exc}")
+                latest_overlay_frame = jpeg   # fallback: show raw if inference crashes
+        else:
+            latest_overlay_frame = jpeg   # no model loaded — mirror raw feed
 
         elapsed = time.time() - t0
         sleep_for = interval - elapsed
@@ -199,14 +210,37 @@ manager = ConnectionManager()
 latest_raw_frame: bytes = b""
 latest_overlay_frame: bytes = b""
 
+# Holds the loaded YOLO model — set once at startup, used in _video_capture_loop
+_yolo_model = None
+
 @app.on_event("startup")
 async def startup_event():
     """
     Fires once when uvicorn starts.
-    Launches the video capture loop in a background daemon thread so
-    the two video windows on the dashboard show a live feed immediately.
-    Source is webcam by default; set VIDEO_SOURCE env var to switch to drone RTSP.
+    1. Loads the YOLO detection model (custom best.pt if available, else yolov8n.pt).
+    2. Launches the video capture thread so both dashboard feed windows go live.
     """
+    global _yolo_model
+
+    # ── Load YOLO model ───────────────────────────────────────────────────────
+    # Priority: custom trained weights → generic YOLOv8n placeholder
+    custom_weights = Path(__file__).resolve().parent.parent.parent / "models" / "weights" / "best.pt"
+    try:
+        from ultralytics import YOLO
+
+        if custom_weights.exists():
+            _yolo_model = YOLO(str(custom_weights))
+            logger.info(f"✅  Loaded CUSTOM YOLO model: {custom_weights.name}")
+        else:
+            # Auto-downloads yolov8n.pt on first run (~6 MB) — already cached
+            _yolo_model = YOLO("yolov8n.pt")
+            logger.info("🤖  YOLOv8n placeholder loaded — detecting PERSON ONLY (conf≥0.30). Swap best.pt when ready.")
+    except Exception as e:
+        logger.warning(f"⚠️  YOLO failed to load — overlay will mirror raw feed. Error: {e}")
+        _yolo_model = None
+
+    # ── Start video capture thread AFTER model is ready ────────────────
+    # Ensures first frames already have a model to run against.
     t = threading.Thread(target=_video_capture_loop, daemon=True, name="video-capture")
     t.start()
     source_desc = f"RTSP: {VIDEO_SOURCE}" if isinstance(VIDEO_SOURCE, str) else f"webcam {VIDEO_SOURCE}"
