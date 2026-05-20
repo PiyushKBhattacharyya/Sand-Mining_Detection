@@ -266,9 +266,12 @@ async def _webcam_telemetry_simulation_loop():
         return
         
     raw_coords = cl_data['features'][0]['geometry']['coordinates']
+    # Store raw centerline waypoint data WITHOUT baking in the lateral offset.
+    # The actual lat/lon is computed dynamically each step so the weave amplitude
+    # instantly reflects the live active_buffer_radius_m when the slider moves.
     flight_points = []
     speed_mps = 42.0 / 3.6
-    
+
     for i in range(len(raw_coords) - 1):
         lon1, lat1 = raw_coords[i]
         lon2, lat2 = raw_coords[i+1]
@@ -278,33 +281,30 @@ async def _webcam_telemetry_simulation_loop():
         distance = math.sqrt(dx**2 + dy**2)
         # Generate steps at 3 Hz
         steps = max(10, int(distance / (speed_mps / 3.0)))
-        
+
+        heading = math.atan2(dy, dx)
+        perp_angle = heading + math.pi / 2.0
+        heading_deg = (90.0 - math.degrees(heading)) % 360.0
+
         for step in range(steps):
             t = step / steps
             interp_lon = lon1 + (lon2 - lon1) * t
             interp_lat = lat1 + (lat2 - lat1) * t
-            
             weave_phase = (i * steps + step) * 0.05
-            # Weave up to 1800m laterally so the drone continuously flies IN and OUT of the buffer zone
-            lateral_offset_meters = math.sin(weave_phase) * 1800.0
-            
-            heading = math.atan2(dy, dx)
-            perp_angle = heading + math.pi / 2.0
-            
-            offset_lat = (lateral_offset_meters * math.sin(perp_angle)) / 111320
-            offset_lon = (lateral_offset_meters * math.cos(perp_angle)) / (111320 * math.cos(math.radians(interp_lat)))
-            
-            final_lat = interp_lat + offset_lat
-            final_lon = interp_lon + offset_lon
-            heading_deg = (90.0 - math.degrees(heading)) % 360.0
-            
+
             flight_points.append({
-                'lat': final_lat,
-                'lon': final_lon,
-                'heading': heading_deg
+                # Base centerline position (no offset applied yet)
+                'base_lat':   interp_lat,
+                'base_lon':   interp_lon,
+                # Perpendicular direction components (unit vector on ground plane)
+                'perp_sin':   math.sin(perp_angle),
+                'perp_cos':   math.cos(perp_angle),
+                # Sine-wave phase so the drone weaves in/out of the buffer
+                'weave_phase': weave_phase,
+                'heading':    heading_deg,
             })
-            
-    logger.info(f"🚀 Hybrid simulation generated {len(flight_points)} waypoints.")
+
+    logger.info(f"🚀 Hybrid simulation generated {len(flight_points)} waypoints (dynamic-radius weave).")
     
     step = 0
     battery = 100.0
@@ -325,8 +325,18 @@ async def _webcam_telemetry_simulation_loop():
                 
             point_idx = step % len(flight_points)
             point = flight_points[point_idx]
-            
-            lat, lon = point['lat'], point['lon']
+
+            # Dynamically compute lat/lon using the LIVE buffer radius so the
+            # drone's weave amplitude instantly matches the slider value.
+            # Weave amplitude = 1.8 × buffer radius (flies well inside AND outside)
+            lateral_offset_meters = math.sin(point['weave_phase']) * (active_buffer_radius_m * 1.8)
+            base_lat = point['base_lat']
+            base_lon = point['base_lon']
+            lat = base_lat + (lateral_offset_meters * point['perp_sin']) / 111320
+            lon = base_lon + (lateral_offset_meters * point['perp_cos']) / (
+                111320 * math.cos(math.radians(base_lat))
+            )
+
             alt = 70.0 + random.uniform(-1.0, 1.0)
             speed = speed_mps
             heading = point['heading']
