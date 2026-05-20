@@ -817,6 +817,31 @@
                         <h3 style="font-size:14px; font-weight:700; color:#e5e7eb;">Incident History</h3>
                         <button id="refresh-audits" class="btn">Refresh</button>
                     </div>
+                    <!-- Filter Control Bar -->
+                    <div style="padding: 10px 16px; background: #1f2937; border-bottom: 1px solid #374151; display: flex; flex-wrap: wrap; gap: 14px; align-items: center;">
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <label for="filter-start" style="font-size: 10px; font-weight: 600; color: #9ca3af; text-transform: uppercase;">From:</label>
+                            <input type="datetime-local" id="filter-start" style="padding: 4px 8px; font-size: 11px; background: #111827; border: 1px solid #374151; color: #e5e7eb; border-radius: 4px; color-scheme: dark; outline: none;">
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <label for="filter-end" style="font-size: 10px; font-weight: 600; color: #9ca3af; text-transform: uppercase;">To:</label>
+                            <input type="datetime-local" id="filter-end" style="padding: 4px 8px; font-size: 11px; background: #111827; border: 1px solid #374151; color: #e5e7eb; border-radius: 4px; color-scheme: dark; outline: none;">
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <label for="filter-severity" style="font-size: 10px; font-weight: 600; color: #9ca3af; text-transform: uppercase;">Severity:</label>
+                            <select id="filter-severity" style="padding: 4px 8px; font-size: 11px; background: #111827; border: 1px solid #374151; color: #e5e7eb; border-radius: 4px; color-scheme: dark; outline: none;">
+                                <option value="">ALL</option>
+                                <option value="EXTREME">EXTREME</option>
+                                <option value="SEVERE">SEVERE</option>
+                                <option value="MEDIUM">MEDIUM</option>
+                                <option value="LOW">LOW</option>
+                            </select>
+                        </div>
+                        <div style="display: flex; gap: 6px; margin-left: auto;">
+                            <button id="btn-filter-apply" class="btn" style="padding: 4px 10px; font-size: 10px; background: #2563eb; border-color: #3b82f6; color: #fff; font-weight: 600;">Apply</button>
+                            <button id="btn-filter-clear" class="btn" style="padding: 4px 10px; font-size: 10px; background: transparent; border-color: #4b5563; color: #9ca3af;">Clear</button>
+                        </div>
+                    </div>
                     <div class="flex-grow overflow-y">
                         <table class="audit-table">
                             <thead>
@@ -1258,12 +1283,13 @@
             document.getElementById('visible-markers-count').textContent = visibleCount;
         }
 
-        // ── TAB 2: Audit data loader (throttled to max 1 call per 3s) ───
+        // ── TAB 2: Audit data loader (throttled to max 1 call per 3s unless forced) ───
         let _auditLastCall = 0;
-        function loadAuditData() {
+        function loadAuditData(force = false) {
             const now = Date.now();
-            if (now - _auditLastCall < 3000) return;
-            _auditLastCall = now;
+            if (!force && (now - _auditLastCall < 3000)) return;
+            if (!force) _auditLastCall = now;
+            
             fetch('/api/stats')
                 .then(res => res.json())
                 .then(stats => {
@@ -1273,12 +1299,24 @@
                     document.getElementById('stat-workers').textContent = stats.detections_count.person;
                 });
 
-            fetch('/api/incidents')
+            // Gather query filter values
+            const startVal = document.getElementById('filter-start').value;
+            const endVal = document.getElementById('filter-end').value;
+            const sevVal = document.getElementById('filter-severity').value;
+
+            let url = '/api/incidents?';
+            const params = [];
+            if (startVal) params.push(`start_date=${encodeURIComponent(startVal)}`);
+            if (endVal) params.push(`end_date=${encodeURIComponent(endVal)}`);
+            if (sevVal) params.push(`severity=${encodeURIComponent(sevVal)}`);
+            url += params.join('&');
+
+            fetch(url)
                 .then(res => res.json())
                 .then(incidents => {
                     const tbody = document.getElementById('incident-audit-body');
                     if (incidents.length === 0) {
-                        tbody.innerHTML = `<tr><td colspan="6" style="padding:30px; text-align:center; color:#6b7280;">No incidents recorded yet.</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="6" style="padding:30px; text-align:center; color:#6b7280;">No incidents match the active filters.</td></tr>`;
                         return;
                     }
 
@@ -1382,7 +1420,18 @@
         }
 
         // Button handlers
-        document.getElementById('refresh-audits').addEventListener('click', loadAuditData);
+        document.getElementById('refresh-audits').addEventListener('click', () => loadAuditData(true));
+
+        document.getElementById('btn-filter-apply').addEventListener('click', () => {
+            loadAuditData(true);
+        });
+
+        document.getElementById('btn-filter-clear').addEventListener('click', () => {
+            document.getElementById('filter-start').value = '';
+            document.getElementById('filter-end').value = '';
+            document.getElementById('filter-severity').value = '';
+            loadAuditData(true);
+        });
 
         document.getElementById('btn-export-pdf').addEventListener('click', () => {
             const link = document.createElement('a');

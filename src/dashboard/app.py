@@ -603,20 +603,63 @@ async def receive_edge_sync(data: Dict[str, Any]):
 
 # REST APIs for historical query & filtering
 
+def parse_date_to_utc(dt_str: str, is_end: bool = False) -> str:
+    """
+    Converts a local browser datetime string to UTC in YYYY-MM-DD HH:MM:SS format.
+    If date-only (10 chars), appends start-of-day or end-of-day time.
+    """
+    from datetime import datetime, timezone
+    try:
+        val = dt_str.strip()
+        if len(val) == 10:
+            val += "T23:59:59" if is_end else "T00:00:00"
+        elif len(val) == 16:
+            val += ":59" if is_end else ":00"
+            
+        dt = datetime.fromisoformat(val.replace(' ', 'T'))
+        if dt.tzinfo is None:
+            dt = dt.astimezone()
+        dt_utc = dt.astimezone(timezone.utc)
+        return dt_utc.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception as e:
+        logger.warning(f"Error parsing date {dt_str}: {e}")
+        return dt_str.replace('T', ' ')
+
 @app.get("/api/incidents")
-def get_incidents(severity: Optional[str] = Query(None, description="Filter by severity: CRITICAL, HIGH, MEDIUM, LOW")):
-    """Retrieves list of all historic clusters/incidents."""
+def get_incidents(
+    severity: Optional[str] = Query(None, description="Filter by severity: EXTREME, SEVERE, MEDIUM, LOW"),
+    start_date: Optional[str] = Query(None, description="Filter by start date/time (local timezone)"),
+    end_date: Optional[str] = Query(None, description="Filter by end date/time (local timezone)")
+):
+    """Retrieves list of all historic clusters/incidents with optional filtering."""
     conn = db_manager.get_connection()
     cursor = conn.cursor()
     
     query = "SELECT id, timestamp, centroid_latitude, centroid_longitude, severity, illegal_zone, distance_to_river_m, evidence_image_path FROM incidents"
+    clauses = []
     params = []
     
+    is_sqlite = db_manager.db_type == "sqlite"
+    ph = "?" if is_sqlite else "%s"
+    
     if severity:
-        query += " WHERE severity = ?" if db_manager.db_type == "sqlite" else " WHERE severity = %s"
+        clauses.append(f"severity = {ph}")
         params.append(severity.upper())
         
-    query += " ORDER BY id DESC LIMIT 50"
+    if start_date:
+        start_utc = parse_date_to_utc(start_date, is_end=False)
+        clauses.append(f"timestamp >= {ph}")
+        params.append(start_utc)
+        
+    if end_date:
+        end_utc = parse_date_to_utc(end_date, is_end=True)
+        clauses.append(f"timestamp <= {ph}")
+        params.append(end_utc)
+        
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+        
+    query += " ORDER BY id DESC LIMIT 100"
     
     try:
         cursor.execute(query, params)
@@ -624,9 +667,15 @@ def get_incidents(severity: Optional[str] = Query(None, description="Filter by s
         
         incidents = []
         for r in rows:
+            db_ts = r[1]
+            if db_ts and "Z" not in db_ts and "+" not in db_ts:
+                ts_formatted = db_ts.replace(" ", "T") + "Z"
+            else:
+                ts_formatted = db_ts
+                
             incidents.append({
                 "id": r[0],
-                "timestamp": r[1],
+                "timestamp": ts_formatted,
                 "centroid_latitude": r[2],
                 "centroid_longitude": r[3],
                 "severity": r[4],
@@ -680,11 +729,17 @@ def get_detections(
         
         detections = []
         for r in rows:
+            db_ts = r[3]
+            if db_ts and "Z" not in db_ts and "+" not in db_ts:
+                ts_formatted = db_ts.replace(" ", "T") + "Z"
+            else:
+                ts_formatted = db_ts
+                
             detections.append({
                 "id": r[0],
                 "telemetry_log_id": r[1],
                 "incident_id": r[2],
-                "timestamp": r[3],
+                "timestamp": ts_formatted,
                 "class_name": r[4],
                 "confidence": r[5],
                 "bbox": [r[6], r[7], r[8], r[9]], # x_min, y_min, x_max, y_max
