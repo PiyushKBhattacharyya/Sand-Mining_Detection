@@ -266,6 +266,14 @@ async def _webcam_telemetry_simulation_loop():
         return
         
     raw_coords = cl_data['features'][0]['geometry']['coordinates']
+    # Filter: only keep coordinates in Assam, India (lat > 25.8)
+    # The southern portion of the centerline crosses into Bangladesh
+    # where Google Maps has no road data and directions fail.
+    raw_coords = [c for c in raw_coords if c[1] > 25.8]
+    if len(raw_coords) < 10:
+        logger.error("Not enough centerline points in India after filtering.")
+        return
+    logger.info(f"Centerline filtered to {len(raw_coords)} points in Assam, India.")
     # Store raw centerline waypoint data WITHOUT baking in the lateral offset.
     # The actual lat/lon is computed dynamically each step so the weave amplitude
     # instantly reflects the live active_buffer_radius_m when the slider moves.
@@ -379,6 +387,23 @@ async def _webcam_telemetry_simulation_loop():
             
             # ── Process active webcam detections mapped to this GPS location! ──
             active_dets = list(latest_webcam_detections)
+
+            # If no real webcam detections, simulate random detections with all classes
+            if not active_dets and random.random() < 0.15:
+                sim_classes = ['person', 'jcb', 'truck']
+                # Vary how many classes appear (1-3 randomly)
+                num_classes = random.choices([1, 2, 3], weights=[50, 30, 20])[0]
+                chosen_classes = random.sample(sim_classes, num_classes)
+                for cls in chosen_classes:
+                    active_dets.append({
+                        'class_name': cls,
+                        'confidence': round(random.uniform(0.55, 0.95), 2),
+                        'bbox_x_min': random.randint(100, 400),
+                        'bbox_y_min': random.randint(100, 400),
+                        'bbox_x_max': random.randint(500, 800),
+                        'bbox_y_max': random.randint(500, 800),
+                    })
+
             if active_dets:
                 mapped_dets = []
                 for idx, det in enumerate(active_dets):
@@ -588,7 +613,7 @@ def get_incidents(severity: Optional[str] = Query(None, description="Filter by s
         query += " WHERE severity = ?" if db_manager.db_type == "sqlite" else " WHERE severity = %s"
         params.append(severity.upper())
         
-    query += " ORDER BY id DESC"
+    query += " ORDER BY id DESC LIMIT 50"
     
     try:
         cursor.execute(query, params)
@@ -679,8 +704,8 @@ def get_dashboard_stats():
     cursor = conn.cursor()
     
     try:
-        # Total incidents
-        cursor.execute("SELECT COUNT(*), SUM(CASE WHEN severity = 'CRITICAL' THEN 1 ELSE 0 END) FROM incidents")
+        # Total incidents and high-severity count (EXTREME + SEVERE)
+        cursor.execute("SELECT COUNT(*), SUM(CASE WHEN severity IN ('EXTREME', 'SEVERE') THEN 1 ELSE 0 END) FROM incidents")
         total_inc, total_crit = cursor.fetchone()
         total_crit = total_crit or 0
         

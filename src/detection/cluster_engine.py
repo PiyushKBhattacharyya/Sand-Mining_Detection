@@ -76,21 +76,23 @@ class ClusterEngine:
     def calculate_severity(self, detections: List[Dict[str, Any]]) -> str:
         """
         Calculates cluster severity based on constituent detections:
-        - CRITICAL: JCB + Truck + Workers co-located inside illegal zone.
-        - HIGH: Heavy machinery (JCB or Truck) + Workers present.
-        - MEDIUM: Vehicles only, no human workers detected.
-        - LOW: Workers/people only, no excavation machinery.
+        - EXTREME: All 3 classes present (JCB + Truck + Workers).
+        - SEVERE:  Both vehicle types present (JCB + Truck), no workers.
+        - MEDIUM:  Only one vehicle type (JCB or Truck), with or without workers.
+        - LOW:     Workers/people only, no excavation machinery.
         """
         classes = [d['class_name'].lower() for d in detections]
-        
+
         has_jcb = 'jcb' in classes
         has_truck = 'truck' in classes
         has_person = 'person' in classes
-        
-        if has_jcb and has_truck and has_person:
-            return "CRITICAL"
-        elif (has_jcb or has_truck) and has_person:
-            return "HIGH"
+
+        has_both_vehicles = has_jcb and has_truck
+
+        if has_both_vehicles and has_person:
+            return "EXTREME"
+        elif has_both_vehicles:
+            return "SEVERE"
         elif has_jcb or has_truck:
             return "MEDIUM"
         else:

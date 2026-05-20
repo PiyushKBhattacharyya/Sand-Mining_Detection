@@ -1,11 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sand Mining Surveillance Dashboard</title>
     <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
     <!-- Leaflet.js CSS and JS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -13,7 +16,13 @@
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
 
     <style>
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
 
         body {
             font-family: 'Inter', sans-serif;
@@ -23,15 +32,58 @@
             display: flex;
             flex-direction: column;
         }
-        .mono { font-family: 'JetBrains Mono', monospace; }
+
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
 
         /* ── Layout helpers ─────────────────────────────────────────── */
-        .header   { background: #1f2937; border-bottom: 1px solid #374151; padding: 12px 24px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
-        .tab-bar  { background: #1a2233; border-bottom: 1px solid #374151; display: flex; padding: 0 24px; }
-        .tab-btn  { padding: 12px 20px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; background: none; color: #9ca3af; border-bottom: 2px solid transparent; transition: all 0.2s; }
-        .tab-btn:hover { color: #d1d5db; }
-        .tab-btn.active { color: #60a5fa; border-bottom-color: #60a5fa; }
-        .main-area { flex: 1; padding: 20px; display: flex; flex-direction: column; overflow: hidden; }
+        .header {
+            background: #1f2937;
+            border-bottom: 1px solid #374151;
+            padding: 12px 24px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .tab-bar {
+            background: #1a2233;
+            border-bottom: 1px solid #374151;
+            display: flex;
+            padding: 0 24px;
+        }
+
+        .tab-btn {
+            padding: 12px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            background: none;
+            color: #9ca3af;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .tab-btn:hover {
+            color: #d1d5db;
+        }
+
+        .tab-btn.active {
+            color: #60a5fa;
+            border-bottom-color: #60a5fa;
+        }
+
+        .main-area {
+            flex: 1;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
 
         /* ── Cards / panels ─────────────────────────────────────────── */
         .card {
@@ -43,151 +95,526 @@
 
         /* ── Status bar chips ──────────────────────────────────────── */
         .chip {
-            display: inline-flex; align-items: center; gap: 6px;
-            background: #111827; border: 1px solid #374151; border-radius: 6px;
-            padding: 4px 10px; font-size: 12px; color: #9ca3af;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: #111827;
+            border: 1px solid #374151;
+            border-radius: 6px;
+            padding: 4px 10px;
+            font-size: 12px;
+            color: #9ca3af;
         }
-        .chip strong { color: #e5e7eb; }
-        .chip .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
-        .dot-red   { background: #ef4444; }
-        .dot-green { background: #22c55e; }
+
+        .chip strong {
+            color: #e5e7eb;
+        }
+
+        .chip .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .dot-red {
+            background: #ef4444;
+        }
+
+        .dot-green {
+            background: #22c55e;
+        }
 
         /* ── Buttons ───────────────────────────────────────────────── */
         .btn {
-            display: inline-flex; align-items: center; gap: 6px;
-            padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 600;
-            cursor: pointer; border: 1px solid #4b5563; background: #374151; color: #d1d5db;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid #4b5563;
+            background: #374151;
+            color: #d1d5db;
             transition: background 0.15s;
         }
-        .btn:hover { background: #4b5563; }
-        .btn-primary { background: #2563eb; border-color: #3b82f6; color: #fff; }
-        .btn-primary:hover { background: #1d4ed8; }
-        .btn-danger  { background: #7f1d1d; border-color: #991b1b; color: #fca5a5; }
-        .btn-danger:hover { background: #991b1b; }
+
+        .btn:hover {
+            background: #4b5563;
+        }
+
+        .btn-primary {
+            background: #2563eb;
+            border-color: #3b82f6;
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            background: #1d4ed8;
+        }
+
+        .btn-danger {
+            background: #7f1d1d;
+            border-color: #991b1b;
+            color: #fca5a5;
+        }
+
+        .btn-danger:hover {
+            background: #991b1b;
+        }
 
         /* ── Video feed containers ─────────────────────────────────── */
         .feed-label {
-            position: absolute; top: 8px; left: 8px; z-index: 5;
-            background: rgba(0,0,0,0.7); padding: 3px 8px; border-radius: 4px;
-            font-size: 11px; font-weight: 600; color: #d1d5db;
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            z-index: 5;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #d1d5db;
         }
+
         .feed-badge {
-            position: absolute; top: 8px; right: 8px; z-index: 5;
-            padding: 3px 8px; border-radius: 4px;
-            font-size: 10px; font-weight: 700; text-transform: uppercase;
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            z-index: 5;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
         }
-        .feed-badge-rec  { background: rgba(34,197,94,0.2); color: #4ade80; }
-        .feed-badge-ai   { background: rgba(59,130,246,0.2); color: #60a5fa; }
+
+        .feed-badge-rec {
+            background: rgba(34, 197, 94, 0.2);
+            color: #4ade80;
+        }
+
+        .feed-badge-ai {
+            background: rgba(59, 130, 246, 0.2);
+            color: #60a5fa;
+        }
+
         .feed-footer {
-            background: #111827; padding: 6px 12px; border-top: 1px solid #374151;
-            font-size: 11px; display: flex; justify-content: space-between; color: #9ca3af;
+            background: #111827;
+            padding: 6px 12px;
+            border-top: 1px solid #374151;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            color: #9ca3af;
         }
 
         /* ── Filter checkboxes ─────────────────────────────────────── */
         .filter-row {
-            display: flex; flex-wrap: wrap; gap: 12px; padding: 12px 16px;
-            background: #1f2937; border: 1px solid #374151; border-radius: 8px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            padding: 12px 16px;
+            background: #1f2937;
+            border: 1px solid #374151;
+            border-radius: 8px;
         }
+
         .filter-item {
-            display: flex; align-items: center; gap: 8px; cursor: pointer;
-            font-size: 13px; font-weight: 500; color: #d1d5db;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            color: #d1d5db;
         }
-        .filter-item input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: #3b82f6; }
+
+        .filter-item input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+            accent-color: #3b82f6;
+        }
 
         /* ── Map HUD overlay ───────────────────────────────────────── */
         .map-hud {
-            position: absolute; top: 10px; left: 10px; z-index: 1001;
-            background: rgba(17,24,39,0.92); border: 1px solid #374151; border-radius: 8px;
-            padding: 12px; width: 220px; font-size: 12px;
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 1001;
+            background: rgba(17, 24, 39, 0.92);
+            border: 1px solid #374151;
+            border-radius: 8px;
+            padding: 12px;
+            width: 220px;
+            font-size: 12px;
         }
-        .map-hud h4 { font-size: 12px; font-weight: 700; color: #d1d5db; margin-bottom: 6px; }
-        .map-hud .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #22c55e; margin-right: 4px; }
-        .map-hud .info-row { display: flex; justify-content: space-between; margin: 4px 0; color: #9ca3af; }
-        .map-hud .info-row .val { color: #e5e7eb; font-weight: 600; }
-        .map-hud .divider { border-top: 1px solid #374151; margin: 8px 0; }
+
+        .map-hud h4 {
+            font-size: 12px;
+            font-weight: 700;
+            color: #d1d5db;
+            margin-bottom: 6px;
+        }
+
+        .map-hud .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #22c55e;
+            margin-right: 4px;
+        }
+
+        .map-hud .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 4px 0;
+            color: #9ca3af;
+        }
+
+        .map-hud .info-row .val {
+            color: #e5e7eb;
+            font-weight: 600;
+        }
+
+        .map-hud .divider {
+            border-top: 1px solid #374151;
+            margin: 8px 0;
+        }
 
         /* ── Slider ────────────────────────────────────────────────── */
-        input[type="range"] { width: 100%; height: 4px; border-radius: 2px; appearance: none; background: #374151; cursor: pointer; accent-color: #3b82f6; }
-        .preset-row { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
-        .preset-btn {
-            font-size: 10px; padding: 2px 6px; border-radius: 4px;
-            border: 1px solid #4b5563; background: transparent; color: #9ca3af;
-            cursor: pointer; transition: all 0.15s;
+        input[type="range"] {
+            width: 100%;
+            height: 4px;
+            border-radius: 2px;
+            appearance: none;
+            background: #374151;
+            cursor: pointer;
+            accent-color: #3b82f6;
         }
-        .preset-btn:hover, .preset-btn.active { border-color: #3b82f6; color: #60a5fa; }
+
+        .preset-row {
+            display: flex;
+            gap: 4px;
+            margin-top: 6px;
+            flex-wrap: wrap;
+        }
+
+        .preset-btn {
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid #4b5563;
+            background: transparent;
+            color: #9ca3af;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .preset-btn:hover,
+        .preset-btn.active {
+            border-color: #3b82f6;
+            color: #60a5fa;
+        }
 
         /* ── Map buttons (top-right overlay) ────────────────────────── */
-        .map-controls { position: absolute; top: 10px; right: 10px; z-index: 1001; display: flex; flex-direction: column; gap: 6px; }
-        .map-btn {
-            padding: 5px 10px; font-size: 11px; font-weight: 600;
-            background: rgba(17,24,39,0.9); border: 1px solid #4b5563; color: #9ca3af;
-            border-radius: 6px; cursor: pointer; transition: all 0.15s;
+        .map-controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1001;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
         }
-        .map-btn:hover { border-color: #60a5fa; color: #60a5fa; }
+
+        .map-btn {
+            padding: 5px 10px;
+            font-size: 11px;
+            font-weight: 600;
+            background: rgba(17, 24, 39, 0.9);
+            border: 1px solid #4b5563;
+            color: #9ca3af;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .map-btn:hover {
+            border-color: #60a5fa;
+            color: #60a5fa;
+        }
 
         /* ── Stat cards (tab 2) ────────────────────────────────────── */
-        .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
-        .stat-card { background: #1f2937; border: 1px solid #374151; border-radius: 8px; padding: 16px; }
-        .stat-card .label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af; }
-        .stat-card .value { font-size: 28px; font-weight: 800; margin-top: 4px; }
-        .stat-card .sub   { font-size: 10px; color: #6b7280; margin-top: 2px; }
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: #1f2937;
+            border: 1px solid #374151;
+            border-radius: 8px;
+            padding: 16px;
+        }
+
+        .stat-card .label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #9ca3af;
+        }
+
+        .stat-card .value {
+            font-size: 28px;
+            font-weight: 800;
+            margin-top: 4px;
+        }
+
+        .stat-card .sub {
+            font-size: 10px;
+            color: #6b7280;
+            margin-top: 2px;
+        }
 
         /* ── Audit table ───────────────────────────────────────────── */
-        .audit-table { width: 100%; text-align: left; border-collapse: collapse; font-size: 12px; }
-        .audit-table thead { background: #111827; }
-        .audit-table th { padding: 10px 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; border-bottom: 1px solid #374151; }
-        .audit-table td { padding: 10px 14px; border-bottom: 1px solid #1f2937; }
-        .audit-table tbody tr { cursor: pointer; transition: background 0.15s; }
-        .audit-table tbody tr:hover { background: #1a2233; }
+        .audit-table {
+            width: 100%;
+            text-align: left;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        .audit-table thead {
+            background: #111827;
+        }
+
+        .audit-table th {
+            padding: 10px 14px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #6b7280;
+            border-bottom: 1px solid #374151;
+        }
+
+        .audit-table td {
+            padding: 10px 14px;
+            border-bottom: 1px solid #1f2937;
+        }
+
+        .audit-table tbody tr {
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+
+        .audit-table tbody tr:hover {
+            background: #1a2233;
+        }
 
         /* ── Severity badges ───────────────────────────────────────── */
-        .badge { display: inline-block; padding: 2px 8px; font-size: 10px; font-weight: 700; border-radius: 4px; text-transform: uppercase; }
-        .badge-critical { background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
-        .badge-high     { background: rgba(245,158,11,0.15); color: #fbbf24; border: 1px solid rgba(245,158,11,0.3); }
-        .badge-medium   { background: rgba(245,158,11,0.1);  color: #fbbf24; border: 1px solid rgba(245,158,11,0.2); }
-        .badge-low      { background: rgba(34,197,94,0.15);  color: #4ade80; border: 1px solid rgba(34,197,94,0.3); }
-        .badge-violation { background: rgba(239,68,68,0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.2); }
-        .badge-outside   { background: rgba(107,114,128,0.1); color: #9ca3af; border: 1px solid rgba(107,114,128,0.2); }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            font-size: 10px;
+            font-weight: 700;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+
+        .badge-extreme {
+            background: rgba(220, 38, 38, 0.25);
+            color: #fca5a5;
+            border: 1px solid rgba(220, 38, 38, 0.5);
+            font-weight: 800;
+        }
+
+        .badge-severe {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .badge-critical {
+            background: rgba(239, 68, 68, 0.15);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .badge-high {
+            background: rgba(245, 158, 11, 0.15);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        .badge-medium {
+            background: rgba(245, 158, 11, 0.1);
+            color: #fbbf24;
+            border: 1px solid rgba(245, 158, 11, 0.2);
+        }
+
+        .badge-low {
+            background: rgba(34, 197, 94, 0.15);
+            color: #4ade80;
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+
+        .badge-violation {
+            background: rgba(239, 68, 68, 0.1);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .badge-outside {
+            background: rgba(107, 114, 128, 0.1);
+            color: #9ca3af;
+            border: 1px solid rgba(107, 114, 128, 0.2);
+        }
+
+        .btn-nav {
+            background: #1d4ed8;
+            border-color: #2563eb;
+            color: #fff;
+            font-size: 10px;
+            padding: 3px 8px;
+            text-decoration: none;
+            border-radius: 4px;
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+        }
 
         /* ── Evidence panel ────────────────────────────────────────── */
-        .ev-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: #111827; padding: 10px; border-radius: 6px; font-size: 12px; }
-        .ev-grid .lbl { color: #6b7280; }
-        .ev-grid .val { font-weight: 600; color: #e5e7eb; }
+        .ev-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            background: #111827;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 12px;
+        }
+
+        .ev-grid .lbl {
+            color: #6b7280;
+        }
+
+        .ev-grid .val {
+            font-weight: 600;
+            color: #e5e7eb;
+        }
 
         /* ── Two-column layouts ────────────────────────────────────── */
-        .grid-12 { display: grid; grid-template-columns: 7fr 5fr; gap: 20px; flex: 1; min-height: 0; }
-        .grid-2  { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .grid-12 {
+            display: grid;
+            grid-template-columns: 7fr 5fr;
+            gap: 20px;
+            flex: 1;
+            min-height: 0;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
 
         /* ── Utility ───────────────────────────────────────────────── */
-        .hidden { display: none !important; }
-        .flex-col { display: flex; flex-direction: column; }
-        .flex-grow { flex: 1; min-height: 0; }
-        .overflow-y { overflow-y: auto; }
-        .text-red    { color: #f87171; }
-        .text-green  { color: #4ade80; }
-        .text-yellow { color: #fbbf24; }
-        .text-blue   { color: #60a5fa; }
-        .text-muted  { color: #6b7280; }
-        .text-white  { color: #e5e7eb; }
+        .hidden {
+            display: none !important;
+        }
+
+        .flex-col {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .flex-grow {
+            flex: 1;
+            min-height: 0;
+        }
+
+        .overflow-y {
+            overflow-y: auto;
+        }
+
+        .text-red {
+            color: #f87171;
+        }
+
+        .text-green {
+            color: #4ade80;
+        }
+
+        .text-yellow {
+            color: #fbbf24;
+        }
+
+        .text-blue {
+            color: #60a5fa;
+        }
+
+        .text-muted {
+            color: #6b7280;
+        }
+
+        .text-white {
+            color: #e5e7eb;
+        }
 
         /* ── Responsive ────────────────────────────────────────────── */
         @media (max-width: 1024px) {
-            .grid-12 { grid-template-columns: 1fr; }
-            .grid-2  { grid-template-columns: 1fr; }
-            .stat-grid { grid-template-columns: repeat(2, 1fr); }
+            .grid-12 {
+                grid-template-columns: 1fr;
+            }
+
+            .grid-2 {
+                grid-template-columns: 1fr;
+            }
+
+            .stat-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
         }
+
         @media (max-width: 640px) {
-            .stat-grid { grid-template-columns: 1fr; }
-            .header { flex-direction: column; align-items: flex-start; }
+            .stat-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
         }
 
         /* Scrollbar */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #111827; }
-        ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #111827;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #374151;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #4b5563;
+        }
     </style>
 </head>
+
 <body>
 
     <!-- ═══ HEADER ═══ -->
@@ -204,7 +631,8 @@
             <!-- Connection -->
             <div class="chip">
                 <span>Status:</span>
-                <span id="connection-status" style="font-weight:700; color:#ef4444; display:flex; align-items:center; gap:4px;">
+                <span id="connection-status"
+                    style="font-weight:700; color:#ef4444; display:flex; align-items:center; gap:4px;">
                     <span class="dot dot-red"></span> Offline
                 </span>
             </div>
@@ -212,7 +640,8 @@
             <div class="chip">
                 <span>Battery:</span>
                 <div style="width:50px; height:6px; background:#374151; border-radius:3px; overflow:hidden;">
-                    <div id="battery-bar" style="height:100%; width:0%; background:#22c55e; transition:width 0.5s;"></div>
+                    <div id="battery-bar" style="height:100%; width:0%; background:#22c55e; transition:width 0.5s;">
+                    </div>
                 </div>
                 <strong id="hud-battery">0%</strong>
             </div>
@@ -256,8 +685,10 @@
                         <div class="card flex-col" style="position:relative;">
                             <span class="feed-label">Drone Camera</span>
                             <span class="feed-badge feed-badge-rec">● LIVE</span>
-                            <div style="flex:1; background:#111827; display:flex; align-items:center; justify-content:center;">
-                                <img src="/stream/raw" alt="Raw Drone Feed" style="width:100%; height:100%; object-fit:cover; aspect-ratio:16/9;" />
+                            <div
+                                style="flex:1; background:#111827; display:flex; align-items:center; justify-content:center;">
+                                <img src="/stream/raw" alt="Raw Drone Feed"
+                                    style="width:100%; height:100%; object-fit:cover; aspect-ratio:16/9;" />
                             </div>
                         </div>
 
@@ -265,8 +696,10 @@
                         <div class="card flex-col" style="position:relative;">
                             <span class="feed-label">AI Detection Feed</span>
                             <span class="feed-badge feed-badge-ai">● DETECTING</span>
-                            <div style="flex:1; background:#111827; display:flex; align-items:center; justify-content:center;">
-                                <img src="/stream/overlay" alt="AI Detection Feed" style="width:100%; height:100%; object-fit:cover; aspect-ratio:16/9;" />
+                            <div
+                                style="flex:1; background:#111827; display:flex; align-items:center; justify-content:center;">
+                                <img src="/stream/overlay" alt="AI Detection Feed"
+                                    style="width:100%; height:100%; object-fit:cover; aspect-ratio:16/9;" />
                             </div>
                         </div>
 
@@ -318,7 +751,8 @@
                             <span>Buffer Radius</span>
                             <span class="val" id="buffer-km-label" style="color:#60a5fa;">1.0 km</span>
                         </div>
-                        <input id="buffer-slider" type="range" min="250" max="3000" step="250" value="1000" style="margin-top:4px;">
+                        <input id="buffer-slider" type="range" min="250" max="3000" step="250" value="1000"
+                            style="margin-top:4px;">
                         <div class="preset-row">
                             <button data-km="500" class="buf-preset preset-btn">0.5km</button>
                             <button data-km="1000" class="buf-preset preset-btn active">1km</button>
@@ -329,12 +763,15 @@
                     </div>
 
                     <!-- Map container -->
-                    <div id="map" style="flex:1; width:100%; min-height:300px; background:#111827; touch-action:pan-x pan-y;"></div>
+                    <div id="map"
+                        style="flex:1; width:100%; min-height:300px; background:#111827; touch-action:pan-x pan-y;">
+                    </div>
 
                     <!-- Map control buttons -->
                     <div id="map-controls" class="map-controls">
                         <button id="btn-follow-drone" class="map-btn" title="Toggle drone auto-follow">
-                            <span id="follow-icon" class="dot" style="width:8px;height:8px;border-radius:50%;background:#6b7280;display:inline-block;"></span>
+                            <span id="follow-icon" class="dot"
+                                style="width:8px;height:8px;border-radius:50%;background:#6b7280;display:inline-block;"></span>
                             <span id="follow-label">Follow OFF</span>
                         </button>
                         <button id="btn-recenter" class="map-btn" title="Jump to drone position">Re-center</button>
@@ -354,9 +791,9 @@
                     <div class="sub">Within river reserve</div>
                 </div>
                 <div class="stat-card" style="border-color:#991b1b;">
-                    <div class="label" style="color:#f87171;">Critical Alerts</div>
+                    <div class="label" style="color:#f87171;">Severe / Extreme Alerts</div>
                     <div class="value text-red" id="stat-critical">0</div>
-                    <div class="sub">High severity detections</div>
+                    <div class="sub">Vehicles + machinery detected</div>
                 </div>
                 <div class="stat-card">
                     <div class="label">Machinery Detected</div>
@@ -375,7 +812,8 @@
 
                 <!-- Incidents table -->
                 <div class="card flex-col">
-                    <div style="padding:12px 16px; border-bottom:1px solid #374151; display:flex; justify-content:space-between; align-items:center;">
+                    <div
+                        style="padding:12px 16px; border-bottom:1px solid #374151; display:flex; justify-content:space-between; align-items:center;">
                         <h3 style="font-size:14px; font-weight:700; color:#e5e7eb;">Incident History</h3>
                         <button id="refresh-audits" class="btn">Refresh</button>
                     </div>
@@ -393,7 +831,8 @@
                             </thead>
                             <tbody id="incident-audit-body">
                                 <tr>
-                                    <td colspan="6" style="padding:30px; text-align:center; color:#6b7280;">Loading incidents...</td>
+                                    <td colspan="6" style="padding:30px; text-align:center; color:#6b7280;">Loading
+                                        incidents...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -401,20 +840,24 @@
                 </div>
 
                 <!-- Evidence / detail panel -->
-                <div class="card" style="padding:16px; display:flex; flex-direction:column; justify-content:space-between;">
+                <div class="card"
+                    style="padding:16px; display:flex; flex-direction:column; justify-content:space-between;">
                     <div>
-                        <h3 style="font-size:12px; font-weight:700; text-transform:uppercase; color:#6b7280; margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid #374151;">
+                        <h3
+                            style="font-size:12px; font-weight:700; text-transform:uppercase; color:#6b7280; margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid #374151;">
                             Incident Details & Evidence
                         </h3>
 
                         <!-- Empty state -->
                         <div id="evidence-empty" style="text-align:center; padding:40px 0; color:#6b7280;">
                             <div style="font-size:32px; margin-bottom:8px;">📂</div>
-                            <div style="font-size:12px; font-weight:500;">Select an incident from the table to view details.</div>
+                            <div style="font-size:12px; font-weight:500;">Select an incident from the table to view
+                                details.</div>
                         </div>
 
                         <!-- Filled state -->
-                        <div id="evidence-display" class="hidden" style="display:flex; flex-direction:column; gap:12px;">
+                        <div id="evidence-display" class="hidden"
+                            style="display:flex; flex-direction:column; gap:12px;">
                             <div style="display:flex; justify-content:space-between; align-items:center;">
                                 <span style="font-size:14px; font-weight:700; color:#e5e7eb;">
                                     Incident <strong id="ev-id" style="color:#60a5fa;">#0</strong>
@@ -423,34 +866,45 @@
                             </div>
 
                             <div class="ev-grid">
-                                <div><span class="lbl">Latitude:</span> <span id="ev-lat" class="val mono">0.0</span></div>
-                                <div><span class="lbl">Longitude:</span> <span id="ev-lon" class="val mono">0.0</span></div>
-                                <div><span class="lbl">River Distance:</span> <span id="ev-dist" class="val">0.0m</span></div>
+                                <div><span class="lbl">Latitude:</span> <span id="ev-lat" class="val mono">0.0</span>
+                                </div>
+                                <div><span class="lbl">Longitude:</span> <span id="ev-lon" class="val mono">0.0</span>
+                                </div>
+                                <div><span class="lbl">River Distance:</span> <span id="ev-dist" class="val">0.0m</span>
+                                </div>
                                 <div><span class="lbl">Time:</span> <span id="ev-time" class="val">Never</span></div>
                             </div>
 
                             <!-- Evidence image -->
                             <div id="ev-image-container" class="hidden">
-                                <div style="font-size:11px; font-weight:600; color:#6b7280; margin-bottom:4px;">Evidence Snapshot:</div>
-                                <img id="ev-image" src="" alt="Evidence" style="max-height:140px; border-radius:4px; border:1px solid #374151; background:#111827; object-fit:contain; display:block; margin:0 auto;">
+                                <div style="font-size:11px; font-weight:600; color:#6b7280; margin-bottom:4px;">Evidence
+                                    Snapshot:</div>
+                                <img id="ev-image" src="" alt="Evidence"
+                                    style="max-height:140px; border-radius:4px; border:1px solid #374151; background:#111827; object-fit:contain; display:block; margin:0 auto;">
                             </div>
 
                             <!-- Detections list -->
                             <div>
-                                <div style="font-size:11px; font-weight:600; color:#6b7280; margin-bottom:4px;">Detected Objects:</div>
-                                <div id="ev-detections-list" style="display:flex; flex-direction:column; gap:4px; max-height:120px; overflow-y:auto;">
+                                <div style="font-size:11px; font-weight:600; color:#6b7280; margin-bottom:4px;">Detected
+                                    Objects:</div>
+                                <div id="ev-detections-list"
+                                    style="display:flex; flex-direction:column; gap:4px; max-height:120px; overflow-y:auto;">
                                 </div>
                             </div>
                         </div>
                     </div>
 
                     <!-- Export buttons -->
-                    <div id="evidence-action-bar" class="hidden" style="border-top:1px solid #374151; padding-top:12px; margin-top:12px; display:flex; flex-direction:column; gap:8px;">
-                        <button id="btn-export-pdf" class="btn btn-primary" style="width:100%; justify-content:center; padding:10px;">
+                    <div id="evidence-action-bar" class="hidden"
+                        style="border-top:1px solid #374151; padding-top:12px; margin-top:12px; display:flex; flex-direction:column; gap:8px;">
+                        <div id="ev-nav-link"></div>
+                        <button id="btn-export-pdf" class="btn btn-primary"
+                            style="width:100%; justify-content:center; padding:10px;">
                             Download Full PDF Report
                         </button>
-                        <button id="btn-export-pdf-critical" class="btn btn-danger" style="width:100%; justify-content:center; padding:8px;">
-                            Export Critical Incidents Only
+                        <button id="btn-export-pdf-critical" class="btn btn-danger"
+                            style="width:100%; justify-content:center; padding:8px;">
+                            Export Severe / Extreme Incidents Only
                         </button>
                     </div>
                 </div>
@@ -507,12 +961,12 @@
             L.DomEvent.disableClickPropagation(controlsDiv);
             L.DomEvent.disableScrollPropagation(controlsDiv);
 
-            document.getElementById('btn-follow-drone').addEventListener('click', function(e) {
+            document.getElementById('btn-follow-drone').addEventListener('click', function (e) {
                 e.stopPropagation();
                 toggleFollow();
             });
 
-            document.getElementById('btn-recenter').addEventListener('click', function(e) {
+            document.getElementById('btn-recenter').addEventListener('click', function (e) {
                 e.stopPropagation();
                 if (lastDroneLatlng) map.setView(lastDroneLatlng, map.getZoom(), { animate: true });
                 else map.flyToBounds([[26.02, 89.97], [27.50, 95.50]], { padding: [20, 20] });
@@ -546,8 +1000,8 @@
         function toggleFollow() {
             followDrone = !followDrone;
             const icon = document.getElementById('follow-icon');
-            const lbl  = document.getElementById('follow-label');
-            const btn  = document.getElementById('btn-follow-drone');
+            const lbl = document.getElementById('follow-label');
+            const btn = document.getElementById('btn-follow-drone');
             if (followDrone) {
                 icon.style.cssText = 'width:8px;height:8px;border-radius:50%;background:#3b82f6;display:inline-block;';
                 lbl.textContent = 'Follow ON';
@@ -593,6 +1047,11 @@
         let centerlineGeoJSON = null;
         let currentBufferM = 1000;
 
+        /** Google Maps driving directions to detection location */
+        function gmapsNav(lat, lon) {
+            return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving`;
+        }
+
         function drawBuffer(radiusM) {
             if (!centerlineGeoJSON) return;
             currentBufferM = radiusM;
@@ -604,7 +1063,7 @@
 
             const km = (radiusM / 1000).toFixed(radiusM % 1000 === 0 ? 0 : 1);
             document.getElementById('active-zone-label').textContent = `${km} km Buffer`;
-            document.getElementById('buffer-km-label').textContent   = `${(radiusM/1000).toFixed(1)} km`;
+            document.getElementById('buffer-km-label').textContent = `${(radiusM / 1000).toFixed(1)} km`;
         }
 
         fetch('/data/legal_zones/river_centerline.geojson?v=' + Date.now())
@@ -616,7 +1075,7 @@
                 const lats = coords.map(c => c[1]);
                 const lons = coords.map(c => c[0]);
                 const bounds = [[Math.min(...lats) - 0.05, Math.min(...lons) - 0.05],
-                                [Math.max(...lats) + 0.05, Math.max(...lons) + 0.05]];
+                [Math.max(...lats) + 0.05, Math.max(...lons) + 0.05]];
                 map.flyToBounds(bounds, { padding: [30, 30], maxZoom: 9, duration: 1.5 });
             })
             .catch(err => {
@@ -625,15 +1084,15 @@
                     .then(r => r.json())
                     .then(geo => {
                         bufferLayer = L.geoJSON(geo, {
-                            style: { color:'#ef4444', weight:2, fillColor:'#ef4444', fillOpacity:0.12, dashArray:'4, 6' }
+                            style: { color: '#ef4444', weight: 2, fillColor: '#ef4444', fillOpacity: 0.12, dashArray: '4, 6' }
                         }).addTo(map);
-                    }).catch(() => {});
+                    }).catch(() => { });
             });
 
         // Wire buffer slider + preset buttons
         (function wireBufferControls() {
-            const hudDiv  = document.getElementById('map-hud');
-            const slider  = document.getElementById('buffer-slider');
+            const hudDiv = document.getElementById('map-hud');
+            const slider = document.getElementById('buffer-slider');
             const presets = document.querySelectorAll('.buf-preset');
 
             L.DomEvent.disableClickPropagation(hudDiv);
@@ -645,12 +1104,12 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ radius_m })
                 })
-                .then(r => r.json())
-                .then(res => { console.log(`Zone updated to ${res.radius_m}m`); })
-                .catch(err => console.warn('Zone radius sync failed:', err));
+                    .then(r => r.json())
+                    .then(res => { console.log(`Zone updated to ${res.radius_m}m`); })
+                    .catch(err => console.warn('Zone radius sync failed:', err));
             }
 
-            slider.addEventListener('input', function() {
+            slider.addEventListener('input', function () {
                 drawBuffer(parseInt(this.value));
                 presets.forEach(b => {
                     const active = parseInt(b.dataset.km) === parseInt(this.value);
@@ -658,12 +1117,12 @@
                 });
             });
 
-            slider.addEventListener('change', function() {
+            slider.addEventListener('change', function () {
                 pushRadiusToServer(parseInt(this.value));
             });
 
             presets.forEach(btn => {
-                btn.addEventListener('click', function(e) {
+                btn.addEventListener('click', function (e) {
                     e.stopPropagation();
                     const m = parseInt(this.dataset.km);
                     slider.value = m;
@@ -676,7 +1135,7 @@
             fetch('/api/zone/radius')
                 .then(r => r.json())
                 .then(res => { slider.value = res.radius_m; })
-                .catch(() => {});
+                .catch(() => { });
         })();
 
         // ── WebSocket ───────────────────────────────────────────────────
@@ -787,7 +1246,11 @@
                         <div style="font-family:Inter,sans-serif; font-size:12px; padding:4px; color:#1f2937;">
                             <strong style="text-transform:uppercase; color:${det.class_name === 'person' ? '#16a34a' : '#d97706'};">${det.class_name}</strong><br>
                             Confidence: <strong>${(det.confidence * 100).toFixed(0)}%</strong><br>
-                            <span style="font-size:10px; color:#6b7280;" class="mono">${det.lat.toFixed(5)}, ${det.lon.toFixed(5)}</span>
+                            <span style="font-size:10px; color:#6b7280;" class="mono">${det.lat.toFixed(5)}, ${det.lon.toFixed(5)}</span><br>
+                            <a href="javascript:void(0)" onclick="window.open(gmapsNav(${det.lat},${det.lon}),'_blank')"
+                               style="display:inline-block; margin-top:4px; padding:3px 8px; background:#047857; color:#fff; border-radius:4px; text-decoration:none; font-size:10px; font-weight:600; cursor:pointer;">
+                               🧭 Get Directions
+                            </a>
                         </div>
                     `);
             });
@@ -795,8 +1258,12 @@
             document.getElementById('visible-markers-count').textContent = visibleCount;
         }
 
-        // ── TAB 2: Audit data loader ────────────────────────────────────
+        // ── TAB 2: Audit data loader (throttled to max 1 call per 3s) ───
+        let _auditLastCall = 0;
         function loadAuditData() {
+            const now = Date.now();
+            if (now - _auditLastCall < 3000) return;
+            _auditLastCall = now;
             fetch('/api/stats')
                 .then(res => res.json())
                 .then(stats => {
@@ -821,9 +1288,13 @@
                         tr.onclick = () => selectIncidentForInspection(inc);
 
                         let badgeClass = 'badge-low';
-                        if (inc.severity === 'CRITICAL') badgeClass = 'badge-critical';
+                        if (inc.severity === 'EXTREME') badgeClass = 'badge-extreme';
+                        else if (inc.severity === 'SEVERE') badgeClass = 'badge-severe';
+                        else if (inc.severity === 'CRITICAL') badgeClass = 'badge-critical';
                         else if (inc.severity === 'HIGH') badgeClass = 'badge-high';
                         else if (inc.severity === 'MEDIUM') badgeClass = 'badge-medium';
+
+                        const navLink = gmapsNav(inc.centroid_latitude, inc.centroid_longitude);
 
                         tr.innerHTML = `
                             <td style="font-weight:700; color:#60a5fa;">#${inc.id}</td>
@@ -833,8 +1304,9 @@
                             <td style="text-align:center;">
                                 <span class="badge ${inc.illegal_zone ? 'badge-violation' : 'badge-outside'}">${inc.illegal_zone ? 'Buffer Violation' : 'Outside Buffer'}</span>
                             </td>
-                            <td style="text-align:center;">
+                            <td style="text-align:center; display:flex; gap:4px; justify-content:center;">
                                 <button class="btn" style="font-size:10px; padding:4px 10px;">View</button>
+                                <a href="${navLink}" target="_blank" class="btn-nav" style="background:#047857; border-color:#059669;">🧭 Directions</a>
                             </td>
                         `;
                         tbody.appendChild(tr);
@@ -856,9 +1328,17 @@
 
             const sevBadge = document.getElementById('ev-severity-badge');
             sevBadge.textContent = inc.severity;
-            if (inc.severity === 'CRITICAL') sevBadge.className = 'badge badge-critical';
-            else if (inc.severity === 'HIGH') sevBadge.className = 'badge badge-high';
+            if (inc.severity === 'EXTREME') sevBadge.className = 'badge badge-extreme';
+            else if (inc.severity === 'SEVERE') sevBadge.className = 'badge badge-severe';
+            else if (inc.severity === 'MEDIUM') sevBadge.className = 'badge badge-medium';
             else sevBadge.className = 'badge badge-low';
+
+            // Google Maps navigation link
+            const navContainer = document.getElementById('ev-nav-link');
+            if (navContainer) {
+                const navLink = gmapsNav(inc.centroid_latitude, inc.centroid_longitude);
+                navContainer.innerHTML = `<a href="${navLink}" target="_blank" class="btn" style="width:100%; justify-content:center; padding:8px; text-decoration:none; background:#047857; border-color:#059669; color:#fff;">🧭 Get Driving Directions</a>`;
+            }
 
             const imgContainer = document.getElementById('ev-image-container');
             const imgEl = document.getElementById('ev-image');
@@ -915,8 +1395,8 @@
 
         document.getElementById('btn-export-pdf-critical').addEventListener('click', () => {
             const link = document.createElement('a');
-            link.href = '/api/report/pdf?severity=CRITICAL';
-            link.download = 'sand_mining_report_critical.pdf';
+            link.href = '/api/report/pdf?severity=EXTREME';
+            link.download = 'sand_mining_report_extreme.pdf';
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -926,4 +1406,5 @@
         connectWebSocket();
     </script>
 </body>
+
 </html>
