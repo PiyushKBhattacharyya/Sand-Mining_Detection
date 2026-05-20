@@ -462,10 +462,11 @@
         });
 
         // Initialize Leaflet Map (Satellite / Surveillance view look)
-        // Coords centered around the river_centerline.geojson: Guwahati Brahmaputra
+        // Initial view: centre of Assam along the Brahmaputra
+        // The map will auto-fit to the full river extent once the centerline loads.
         const map = L.map('map', {
             zoomControl: false
-        }).setView([26.1593, 91.6661], 13);
+        }).setView([26.55, 92.80], 7);
 
         // Load Satellite Tiles (Standard satellite view)
         const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
@@ -501,6 +502,7 @@
             document.getElementById('btn-recenter').addEventListener('click', function(e) {
                 e.stopPropagation();
                 if (lastDroneLatlng) map.setView(lastDroneLatlng, map.getZoom(), { animate: true });
+                else map.flyToBounds([[26.02, 89.97], [27.50, 95.50]], { padding: [20, 20] });
             });
         })();
         // ──────────────────────────────────────────────────────────────────────
@@ -527,14 +529,16 @@
             iconSize: [20, 20]
         });
 
-        let droneMarker = L.marker([26.1264, 91.6025], { icon: droneIcon }).addTo(map);
+        // Drone marker — starts invisible (no GPS yet), moves to real position on first telemetry
+        // We place it at [0,0] and make opacity=0 until first telemetry update arrives.
+        let droneMarker = L.marker([0, 0], { icon: droneIcon, opacity: 0 }).addTo(map);
 
         // Array to store active detection markers on map
         let detectionMarkers = [];
 
         // Drone follow mode — OFF by default so user can freely drag the map
         let followDrone = false;
-        let lastDroneLatlng = [26.1593, 91.6661];
+        let lastDroneLatlng = null;  // null until first real telemetry arrives
 
         function toggleFollow() {
             followDrone = !followDrone;
@@ -628,17 +632,24 @@
             document.getElementById('buffer-km-label').textContent   = `${(radiusM/1000).toFixed(1)} km`;
         }
 
-        // Fetch centerline (lightweight — only fetched once)
-        fetch('/data/legal_zones/river_centerline.geojson')
+        // Fetch centerline (lightweight — only fetched once, cache-busted for real-time updates)
+        fetch('/data/legal_zones/river_centerline.geojson?v=' + Date.now())
             .then(r => { if (!r.ok) throw new Error('Centerline unavailable'); return r.json(); })
             .then(gj => {
                 centerlineGeoJSON = gj;
                 drawBuffer(1000); // Draw default 1km buffer on load
+                // Auto-fit map to the full river extent (entire Assam stretch)
+                const coords = gj.features[0].geometry.coordinates;
+                const lats = coords.map(c => c[1]);
+                const lons = coords.map(c => c[0]);
+                const bounds = [[Math.min(...lats) - 0.05, Math.min(...lons) - 0.05],
+                                [Math.max(...lats) + 0.05, Math.max(...lons) + 0.05]];
+                map.flyToBounds(bounds, { padding: [30, 30], maxZoom: 9, duration: 1.5 });
             })
             .catch(err => {
                 console.warn('Could not load centerline for dynamic buffer:', err);
                 // Fallback: try to load the pre-generated static buffer
-                fetch('/data/legal_zones/river_buffer_1km.geojson')
+                fetch('/data/legal_zones/river_buffer_1km.geojson?v=' + Date.now())
                     .then(r => r.json())
                     .then(geo => {
                         bufferLayer = L.geoJSON(geo, {
@@ -771,6 +782,7 @@
             const latlng = [tele.lat, tele.lon];
             lastDroneLatlng = latlng;
             droneMarker.setLatLng(latlng);
+            droneMarker.setOpacity(1);  // Make visible on first real GPS fix
             flightTrail.addLatLng(latlng);
 
             // Only auto-pan if follow mode is ON
