@@ -1,432 +1,456 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Brahmaputra Drone Surveillance Command Station</title>
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        tactical: {
-                            dark: '#0a0f1d',
-                            glass: 'rgba(15, 23, 42, 0.65)',
-                            border: 'rgba(255, 255, 255, 0.08)',
-                            primary: '#3b82f6',
-                            danger: '#ef4444',
-                            warning: '#f59e0b',
-                            success: '#10b981',
-                            glow: '#00f0ff'
-                        }
-                    }
-                }
-            }
-        }
-    </script>
+    <title>Sand Mining Surveillance Dashboard</title>
     <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <!-- Leaflet.js CSS and JS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <!-- Turf.js — client-side spatial analysis for dynamic buffer drawing -->
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
-    
+
     <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
         body {
-            font-family: 'Outfit', sans-serif;
-            background-color: #050814;
-            color: #e2e8f0;
-            overflow-x: hidden;
+            font-family: 'Inter', sans-serif;
+            background: #111827;
+            color: #e5e7eb;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
         }
-        .mono {
-            font-family: 'JetBrains Mono', monospace;
+        .mono { font-family: 'JetBrains Mono', monospace; }
+
+        /* ── Layout helpers ─────────────────────────────────────────── */
+        .header   { background: #1f2937; border-bottom: 1px solid #374151; padding: 12px 24px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+        .tab-bar  { background: #1a2233; border-bottom: 1px solid #374151; display: flex; padding: 0 24px; }
+        .tab-btn  { padding: 12px 20px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; background: none; color: #9ca3af; border-bottom: 2px solid transparent; transition: all 0.2s; }
+        .tab-btn:hover { color: #d1d5db; }
+        .tab-btn.active { color: #60a5fa; border-bottom-color: #60a5fa; }
+        .main-area { flex: 1; padding: 20px; display: flex; flex-direction: column; overflow: hidden; }
+
+        /* ── Cards / panels ─────────────────────────────────────────── */
+        .card {
+            background: #1f2937;
+            border: 1px solid #374151;
+            border-radius: 8px;
+            overflow: hidden;
         }
-        .glass-panel {
-            background: rgba(10, 16, 32, 0.75);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+
+        /* ── Status bar chips ──────────────────────────────────────── */
+        .chip {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: #111827; border: 1px solid #374151; border-radius: 6px;
+            padding: 4px 10px; font-size: 12px; color: #9ca3af;
         }
-        .glow-border-critical {
-            box-shadow: 0 0 15px rgba(239, 68, 68, 0.3);
-            border: 1px solid rgba(239, 68, 68, 0.5);
+        .chip strong { color: #e5e7eb; }
+        .chip .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+        .dot-red   { background: #ef4444; }
+        .dot-green { background: #22c55e; }
+
+        /* ── Buttons ───────────────────────────────────────────────── */
+        .btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 14px; border-radius: 6px; font-size: 12px; font-weight: 600;
+            cursor: pointer; border: 1px solid #4b5563; background: #374151; color: #d1d5db;
+            transition: background 0.15s;
         }
-        .glow-text {
-            text-shadow: 0 0 10px rgba(0, 240, 255, 0.6);
+        .btn:hover { background: #4b5563; }
+        .btn-primary { background: #2563eb; border-color: #3b82f6; color: #fff; }
+        .btn-primary:hover { background: #1d4ed8; }
+        .btn-danger  { background: #7f1d1d; border-color: #991b1b; color: #fca5a5; }
+        .btn-danger:hover { background: #991b1b; }
+
+        /* ── Video feed containers ─────────────────────────────────── */
+        .feed-label {
+            position: absolute; top: 8px; left: 8px; z-index: 5;
+            background: rgba(0,0,0,0.7); padding: 3px 8px; border-radius: 4px;
+            font-size: 11px; font-weight: 600; color: #d1d5db;
         }
-        /* Custom scrollbar */
-        ::-webkit-scrollbar {
-            width: 6px;
+        .feed-badge {
+            position: absolute; top: 8px; right: 8px; z-index: 5;
+            padding: 3px 8px; border-radius: 4px;
+            font-size: 10px; font-weight: 700; text-transform: uppercase;
         }
-        ::-webkit-scrollbar-track {
-            background: #070b16;
+        .feed-badge-rec  { background: rgba(34,197,94,0.2); color: #4ade80; }
+        .feed-badge-ai   { background: rgba(59,130,246,0.2); color: #60a5fa; }
+        .feed-footer {
+            background: #111827; padding: 6px 12px; border-top: 1px solid #374151;
+            font-size: 11px; display: flex; justify-content: space-between; color: #9ca3af;
         }
-        ::-webkit-scrollbar-thumb {
-            background: #1e293b;
-            border-radius: 3px;
+
+        /* ── Filter checkboxes ─────────────────────────────────────── */
+        .filter-row {
+            display: flex; flex-wrap: wrap; gap: 12px; padding: 12px 16px;
+            background: #1f2937; border: 1px solid #374151; border-radius: 8px;
         }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #334155;
+        .filter-item {
+            display: flex; align-items: center; gap: 8px; cursor: pointer;
+            font-size: 13px; font-weight: 500; color: #d1d5db;
         }
+        .filter-item input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: #3b82f6; }
+
+        /* ── Map HUD overlay ───────────────────────────────────────── */
+        .map-hud {
+            position: absolute; top: 10px; left: 10px; z-index: 1001;
+            background: rgba(17,24,39,0.92); border: 1px solid #374151; border-radius: 8px;
+            padding: 12px; width: 220px; font-size: 12px;
+        }
+        .map-hud h4 { font-size: 12px; font-weight: 700; color: #d1d5db; margin-bottom: 6px; }
+        .map-hud .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #22c55e; margin-right: 4px; }
+        .map-hud .info-row { display: flex; justify-content: space-between; margin: 4px 0; color: #9ca3af; }
+        .map-hud .info-row .val { color: #e5e7eb; font-weight: 600; }
+        .map-hud .divider { border-top: 1px solid #374151; margin: 8px 0; }
+
+        /* ── Slider ────────────────────────────────────────────────── */
+        input[type="range"] { width: 100%; height: 4px; border-radius: 2px; appearance: none; background: #374151; cursor: pointer; accent-color: #3b82f6; }
+        .preset-row { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+        .preset-btn {
+            font-size: 10px; padding: 2px 6px; border-radius: 4px;
+            border: 1px solid #4b5563; background: transparent; color: #9ca3af;
+            cursor: pointer; transition: all 0.15s;
+        }
+        .preset-btn:hover, .preset-btn.active { border-color: #3b82f6; color: #60a5fa; }
+
+        /* ── Map buttons (top-right overlay) ────────────────────────── */
+        .map-controls { position: absolute; top: 10px; right: 10px; z-index: 1001; display: flex; flex-direction: column; gap: 6px; }
+        .map-btn {
+            padding: 5px 10px; font-size: 11px; font-weight: 600;
+            background: rgba(17,24,39,0.9); border: 1px solid #4b5563; color: #9ca3af;
+            border-radius: 6px; cursor: pointer; transition: all 0.15s;
+        }
+        .map-btn:hover { border-color: #60a5fa; color: #60a5fa; }
+
+        /* ── Stat cards (tab 2) ────────────────────────────────────── */
+        .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+        .stat-card { background: #1f2937; border: 1px solid #374151; border-radius: 8px; padding: 16px; }
+        .stat-card .label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af; }
+        .stat-card .value { font-size: 28px; font-weight: 800; margin-top: 4px; }
+        .stat-card .sub   { font-size: 10px; color: #6b7280; margin-top: 2px; }
+
+        /* ── Audit table ───────────────────────────────────────────── */
+        .audit-table { width: 100%; text-align: left; border-collapse: collapse; font-size: 12px; }
+        .audit-table thead { background: #111827; }
+        .audit-table th { padding: 10px 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; border-bottom: 1px solid #374151; }
+        .audit-table td { padding: 10px 14px; border-bottom: 1px solid #1f2937; }
+        .audit-table tbody tr { cursor: pointer; transition: background 0.15s; }
+        .audit-table tbody tr:hover { background: #1a2233; }
+
+        /* ── Severity badges ───────────────────────────────────────── */
+        .badge { display: inline-block; padding: 2px 8px; font-size: 10px; font-weight: 700; border-radius: 4px; text-transform: uppercase; }
+        .badge-critical { background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
+        .badge-high     { background: rgba(245,158,11,0.15); color: #fbbf24; border: 1px solid rgba(245,158,11,0.3); }
+        .badge-medium   { background: rgba(245,158,11,0.1);  color: #fbbf24; border: 1px solid rgba(245,158,11,0.2); }
+        .badge-low      { background: rgba(34,197,94,0.15);  color: #4ade80; border: 1px solid rgba(34,197,94,0.3); }
+        .badge-violation { background: rgba(239,68,68,0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.2); }
+        .badge-outside   { background: rgba(107,114,128,0.1); color: #9ca3af; border: 1px solid rgba(107,114,128,0.2); }
+
+        /* ── Evidence panel ────────────────────────────────────────── */
+        .ev-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: #111827; padding: 10px; border-radius: 6px; font-size: 12px; }
+        .ev-grid .lbl { color: #6b7280; }
+        .ev-grid .val { font-weight: 600; color: #e5e7eb; }
+
+        /* ── Two-column layouts ────────────────────────────────────── */
+        .grid-12 { display: grid; grid-template-columns: 7fr 5fr; gap: 20px; flex: 1; min-height: 0; }
+        .grid-2  { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+        /* ── Utility ───────────────────────────────────────────────── */
+        .hidden { display: none !important; }
+        .flex-col { display: flex; flex-direction: column; }
+        .flex-grow { flex: 1; min-height: 0; }
+        .overflow-y { overflow-y: auto; }
+        .text-red    { color: #f87171; }
+        .text-green  { color: #4ade80; }
+        .text-yellow { color: #fbbf24; }
+        .text-blue   { color: #60a5fa; }
+        .text-muted  { color: #6b7280; }
+        .text-white  { color: #e5e7eb; }
+
+        /* ── Responsive ────────────────────────────────────────────── */
+        @media (max-width: 1024px) {
+            .grid-12 { grid-template-columns: 1fr; }
+            .grid-2  { grid-template-columns: 1fr; }
+            .stat-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 640px) {
+            .stat-grid { grid-template-columns: 1fr; }
+            .header { flex-direction: column; align-items: flex-start; }
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #111827; }
+        ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #4b5563; }
     </style>
 </head>
-<body class="min-h-screen flex flex-col">
+<body>
 
-    <!-- 🌌 Top Navigation / HUD Bar -->
-    <header class="w-full glass-panel border-b border-tactical-border px-6 py-4 flex flex-col md:flex-row justify-between items-center z-50 shrink-0">
-        <div class="flex items-center gap-4 mb-4 md:mb-0">
-            <div class="w-3 h-3 rounded-full bg-cyan-400 animate-ping relative">
-                <span class="absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-            </div>
-            <div>
-                <h1 class="text-xl font-bold tracking-wider text-white uppercase flex items-center gap-2">
-                    <span class="text-cyan-400 glow-text font-extrabold">Brahmaputra-01</span> Aerial Surveillance Hub
-                </h1>
-                <p class="text-xs text-slate-400 tracking-widest uppercase mt-0.5">Tactical Edge-Cloud Command Station</p>
-            </div>
+    <!-- ═══ HEADER ═══ -->
+    <header class="header">
+        <div>
+            <h1 style="font-size:18px; font-weight:700; color:#e5e7eb;">
+                Sand Mining Drone Surveillance
+            </h1>
+            <p style="font-size:11px; color:#6b7280; margin-top:2px;">Brahmaputra River Monitoring System</p>
         </div>
 
-        <!-- Realtime Telemetry HUD Panel -->
-        <div class="flex flex-wrap items-center gap-6 text-sm">
-            <!-- Connection Status -->
-            <div class="flex items-center gap-2 px-3 py-1.5 rounded-md bg-slate-950/60 border border-tactical-border">
-                <span class="text-slate-400 uppercase text-[10px] tracking-wider font-semibold">Cloud Link:</span>
-                <span id="connection-status" class="font-bold text-red-500 flex items-center gap-1.5 uppercase tracking-wide">
-                    <span class="w-2 h-2 rounded-full bg-red-500 inline-block animate-pulse"></span> Offline
+        <!-- Status bar -->
+        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+            <!-- Connection -->
+            <div class="chip">
+                <span>Status:</span>
+                <span id="connection-status" style="font-weight:700; color:#ef4444; display:flex; align-items:center; gap:4px;">
+                    <span class="dot dot-red"></span> Offline
                 </span>
             </div>
-
-            <!-- Drone Battery -->
-            <div class="flex items-center gap-2 px-3 py-1.5 rounded-md bg-slate-950/60 border border-tactical-border">
-                <span class="text-slate-400 uppercase text-[10px] tracking-wider font-semibold">Drone Battery:</span>
-                <div class="w-16 bg-slate-800 h-2.5 rounded-full overflow-hidden border border-slate-700/50 flex">
-                    <div id="battery-bar" class="bg-emerald-500 h-full w-0 transition-all duration-500"></div>
+            <!-- Battery -->
+            <div class="chip">
+                <span>Battery:</span>
+                <div style="width:50px; height:6px; background:#374151; border-radius:3px; overflow:hidden;">
+                    <div id="battery-bar" style="height:100%; width:0%; background:#22c55e; transition:width 0.5s;"></div>
                 </div>
-                <span id="hud-battery" class="font-bold text-emerald-400 mono">0%</span>
+                <strong id="hud-battery">0%</strong>
             </div>
-
-            <!-- Altitude & Speed -->
-            <div class="flex items-center gap-4 px-3 py-1.5 rounded-md bg-slate-950/60 border border-tactical-border text-slate-300">
-                <div>
-                    <span class="text-slate-400 uppercase text-[10px] tracking-wider">ALT AGL:</span>
-                    <span id="hud-altitude" class="font-bold text-white ml-1 mono">0.0m</span>
-                </div>
-                <div class="border-l border-slate-800 pl-3">
-                    <span class="text-slate-400 uppercase text-[10px] tracking-wider">SPEED:</span>
-                    <span id="hud-speed" class="font-bold text-white ml-1 mono">0.0 km/h</span>
-                </div>
+            <!-- Altitude -->
+            <div class="chip">
+                <span>Altitude:</span>
+                <strong id="hud-altitude" class="mono">0.0m</strong>
             </div>
-
-            <!-- Live GPS Lat/Lon -->
-            <div class="px-3 py-1.5 rounded-md bg-slate-950/60 border border-tactical-border text-slate-300 min-w-[170px]">
-                <span class="text-slate-400 uppercase text-[10px] tracking-wider block">Drone Coordinates:</span>
-                <span id="hud-coordinates" class="font-bold text-cyan-400 text-xs mono">WAITING FOR TELEMETRY...</span>
+            <!-- Speed -->
+            <div class="chip">
+                <span>Speed:</span>
+                <strong id="hud-speed" class="mono">0.0 km/h</strong>
+            </div>
+            <!-- Coordinates -->
+            <div class="chip">
+                <span>GPS:</span>
+                <strong id="hud-coordinates" class="mono" style="font-size:11px;">Waiting...</strong>
             </div>
         </div>
     </header>
 
-    <!-- 📑 Main Tabs Control -->
-    <div class="flex bg-slate-950/40 border-b border-tactical-border/60 justify-start px-6">
-        <button id="btn-tab-tactical" class="px-6 py-3.5 border-b-2 border-cyan-400 text-cyan-400 font-semibold tracking-wider text-sm flex items-center gap-2 transition-all">
-            🛰️ TACTICAL LIVE COMMAND (STREAM & MAP)
-        </button>
-        <button id="btn-tab-audit" class="px-6 py-3.5 border-b-2 border-transparent text-slate-400 hover:text-white font-semibold tracking-wider text-sm flex items-center gap-2 transition-all">
-            📊 INTELLIGENCE & AUDIT DATABASE
-        </button>
+    <!-- ═══ TABS ═══ -->
+    <div class="tab-bar">
+        <button id="btn-tab-tactical" class="tab-btn active">Live Dashboard</button>
+        <button id="btn-tab-audit" class="tab-btn">Incident Reports</button>
     </div>
 
-    <!-- 🖥️ Workspace Containers -->
-    <main class="flex-grow p-6 flex flex-col min-h-0">
-        
-        <!-- ==================== TAB 1: TACTICAL LIVE COMMAND ==================== -->
-        <div id="tab-tactical" class="flex-grow grid grid-cols-1 lg:grid-cols-12 gap-6 h-full min-h-0">
-            
-            <!-- Live Dual Video Stream Panes (7 Cols) -->
-            <div class="lg:col-span-7 flex flex-col gap-6 min-h-0">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 flex-grow min-h-0">
-                    
-                    <!-- Raw DJI Video Canvas -->
-                    <div class="glass-panel rounded-lg overflow-hidden flex flex-col border border-tactical-border relative group">
-                        <div class="absolute top-3 left-3 bg-slate-950/80 px-2 py-1 rounded text-[10px] font-bold tracking-widest text-slate-400 uppercase border border-white/10 z-10">
-                            CAM 01: RAW LIVE FEED
-                        </div>
-                        <div class="absolute top-3 right-3 bg-cyan-950/80 px-2 py-1 rounded text-[10px] font-bold tracking-widest text-cyan-400 uppercase border border-cyan-500/20 z-10 animate-pulse">
-                            ● REC 1080P
-                        </div>
-                        <div class="flex-grow bg-slate-950 flex items-center justify-center relative overflow-hidden">
-                            <!-- Live Multipart Stream Tag -->
-                            <img src="/stream/raw" alt="Raw Drone Feed" class="w-full h-full object-cover aspect-video" />
-                            <!-- Simulated Crosshairs -->
-                            <div class="absolute inset-0 border border-white/5 pointer-events-none flex items-center justify-center">
-                                <div class="w-8 h-8 border border-cyan-400/20 rounded-full flex items-center justify-center">
-                                    <div class="w-1 h-1 bg-cyan-400 rounded-full"></div>
-                                </div>
-                                <div class="w-20 h-[1px] bg-cyan-400/10 absolute"></div>
-                                <div class="h-20 w-[1px] bg-cyan-400/10 absolute"></div>
+    <!-- ═══ MAIN CONTENT ═══ -->
+    <main class="main-area">
+
+        <!-- ══════════ TAB 1: LIVE DASHBOARD ══════════ -->
+        <div id="tab-tactical" class="flex-col" style="flex:1; gap:16px; min-height:0;">
+
+            <!-- Top row: feeds + map -->
+            <div class="grid-12" style="flex:1;">
+                <!-- Left: Video feeds + filters -->
+                <div class="flex-col" style="gap:16px;">
+                    <!-- Two video feeds side by side -->
+                    <div class="grid-2" style="flex:1;">
+                        <!-- Raw feed -->
+                        <div class="card flex-col" style="position:relative;">
+                            <span class="feed-label">Drone Camera</span>
+                            <span class="feed-badge feed-badge-rec">● LIVE</span>
+                            <div style="flex:1; background:#111827; display:flex; align-items:center; justify-content:center;">
+                                <img src="/stream/raw" alt="Raw Drone Feed" style="width:100%; height:100%; object-fit:cover; aspect-ratio:16/9;" />
                             </div>
                         </div>
-                        <!-- Frame Metadata Overlay -->
-                        <div class="bg-slate-950 px-4 py-2 border-t border-tactical-border text-xs flex justify-between items-center text-slate-400">
-                            <span>FPS: <strong class="text-white">20.0</strong></span>
-                            <span class="mono" id="raw-stream-time">00:00:00.0</span>
+
+                        <!-- AI detection feed -->
+                        <div class="card flex-col" style="position:relative;">
+                            <span class="feed-label">AI Detection Feed</span>
+                            <span class="feed-badge feed-badge-ai">● DETECTING</span>
+                            <div style="flex:1; background:#111827; display:flex; align-items:center; justify-content:center;">
+                                <img src="/stream/overlay" alt="AI Detection Feed" style="width:100%; height:100%; object-fit:cover; aspect-ratio:16/9;" />
+                            </div>
                         </div>
+
+                        <!-- Hidden elements referenced by JS (not displayed) -->
+                        <span id="raw-stream-time" style="display:none;"></span>
+                        <span id="detection-indicator" style="display:none;"></span>
                     </div>
 
-                    <!-- Annotated AI Video Canvas -->
-                    <div class="glass-panel rounded-lg overflow-hidden flex flex-col border border-tactical-border relative group">
-                        <div class="absolute top-3 left-3 bg-slate-950/80 px-2 py-1 rounded text-[10px] font-bold tracking-widest text-slate-400 uppercase border border-white/10 z-10">
-                            CAM 01: YOLOv8 ANNOTATED FEED
-                        </div>
-                        <div class="absolute top-3 right-3 bg-rose-950/80 px-2 py-1 rounded text-[10px] font-bold tracking-widest text-rose-400 uppercase border border-rose-500/20 z-10 animate-pulse">
-                            ● DETECTING
-                        </div>
-                        <div class="flex-grow bg-slate-950 flex items-center justify-center relative overflow-hidden">
-                            <!-- Live Bounding Box Stream Tag -->
-                            <img src="/stream/overlay" alt="Annotated AI Feed" class="w-full h-full object-cover aspect-video" />
-                        </div>
-                        <!-- Bounding Box Overlay Metadata -->
-                        <div class="bg-slate-950 px-4 py-2 border-t border-tactical-border text-xs flex justify-between items-center text-slate-400">
-                            <span>YOLOv8m: <strong class="text-white">15ms Inference</strong></span>
-                            <span class="text-rose-400 font-bold uppercase tracking-wider" id="detection-indicator">No active targets</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 🎛️ Real-Time Filter & Layers Control Board -->
-                <div class="glass-panel p-5 rounded-lg border border-tactical-border">
-                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
-                        <span>🎚️</span> Target Class Filtering & Visibility Controls
-                    </h3>
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <!-- All Classes Toggle -->
-                        <label class="flex items-center gap-3 bg-slate-900/60 p-3 rounded-lg border border-tactical-border cursor-pointer hover:border-cyan-500/35 transition-all">
-                            <input type="checkbox" id="filter-all" checked class="w-4 h-4 text-cyan-500 bg-slate-950 border-slate-700 rounded focus:ring-cyan-500/20 focus:ring-2">
-                            <div>
-                                <span class="block text-xs font-bold text-white">ALL TARGETS</span>
-                                <span class="block text-[10px] text-slate-400">Show all detections</span>
-                            </div>
+                    <!-- Filters -->
+                    <div class="filter-row">
+                        <label class="filter-item">
+                            <input type="checkbox" id="filter-all" checked>
+                            <span>All Targets</span>
                         </label>
-
-                        <!-- Humans Filter checkbox (The user's requested core feature!) -->
-                        <label class="flex items-center gap-3 bg-slate-900/60 p-3 rounded-lg border border-tactical-border cursor-pointer hover:border-emerald-500/35 transition-all">
-                            <input type="checkbox" id="filter-person" checked class="class-filter w-4 h-4 text-emerald-500 bg-slate-950 border-slate-700 rounded focus:ring-emerald-500/20 focus:ring-2">
-                            <div>
-                                <span class="block text-xs font-bold text-emerald-400 flex items-center gap-1.5">
-                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"></span> HUMANS / WORKERS
-                                </span>
-                                <span class="block text-[10px] text-slate-400">Filter personnel presence</span>
-                            </div>
+                        <label class="filter-item">
+                            <input type="checkbox" id="filter-person" checked class="class-filter">
+                            <span style="color:#4ade80;">● Humans / Workers</span>
                         </label>
-
-                        <!-- JCB Filter -->
-                        <label class="flex items-center gap-3 bg-slate-900/60 p-3 rounded-lg border border-tactical-border cursor-pointer hover:border-yellow-500/35 transition-all">
-                            <input type="checkbox" id="filter-jcb" checked class="class-filter w-4 h-4 text-yellow-500 bg-slate-950 border-slate-700 rounded focus:ring-yellow-500/20 focus:ring-2">
-                            <div>
-                                <span class="block text-xs font-bold text-yellow-400 flex items-center gap-1.5">
-                                    <span class="w-1.5 h-1.5 rounded-full bg-yellow-400 inline-block"></span> EXCAVATORS / JCBS
-                                </span>
-                                <span class="block text-[10px] text-slate-400">Filter heavy equipment</span>
-                            </div>
+                        <label class="filter-item">
+                            <input type="checkbox" id="filter-jcb" checked class="class-filter">
+                            <span style="color:#fbbf24;">● Excavators / JCBs</span>
                         </label>
-
-                        <!-- Truck Filter -->
-                        <label class="flex items-center gap-3 bg-slate-900/60 p-3 rounded-lg border border-tactical-border cursor-pointer hover:border-cyan-500/35 transition-all">
-                            <input type="checkbox" id="filter-truck" checked class="class-filter w-4 h-4 text-cyan-500 bg-slate-950 border-slate-700 rounded focus:ring-cyan-500/20 focus:ring-2">
-                            <div>
-                                <span class="block text-xs font-bold text-cyan-400 flex items-center gap-1.5">
-                                    <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 inline-block"></span> DUMPER TRUCKS
-                                </span>
-                                <span class="block text-[10px] text-slate-400">Filter transport vehicles</span>
-                            </div>
+                        <label class="filter-item">
+                            <input type="checkbox" id="filter-truck" checked class="class-filter">
+                            <span style="color:#60a5fa;">● Dumper Trucks</span>
                         </label>
                     </div>
                 </div>
-            </div>
 
-            <!-- Leaflet GIS Map Card (5 Cols) -->
-            <div class="lg:col-span-5 flex flex-col min-h-0">
-                <div class="glass-panel rounded-lg overflow-hidden flex flex-col border border-tactical-border h-full relative">
-                    <!-- Map HUD Details -->
-                    <div id="map-hud" class="absolute top-3 left-3 bg-slate-950/85 px-3 py-2.5 rounded-lg border border-white/10 z-[1001] text-xs w-[220px]">
-                        <span class="text-slate-400 font-bold block mb-1">&#128752; SATELLITE RADAR</span>
-                        <div class="text-[10px] text-cyan-400 flex items-center gap-1.5 uppercase font-bold">
-                            <span class="w-2 h-2 rounded bg-cyan-400 inline-block animate-ping"></span> Live Tracking Active
+                <!-- Right: Map -->
+                <div class="card" style="position:relative; display:flex; flex-direction:column;">
+                    <!-- Map HUD -->
+                    <div id="map-hud" class="map-hud">
+                        <h4>Map View</h4>
+                        <div style="font-size:11px; color:#4ade80; font-weight:600;">
+                            <span class="status-dot"></span> Live Tracking
                         </div>
-                        <div class="mt-2 text-[10px] text-slate-400 border-t border-slate-800 pt-2 flex flex-col gap-1.5">
-                            <div class="flex justify-between items-center">
-                                <span>Active Zone:</span>
-                                <span id="active-zone-label" class="text-red-400 font-semibold">1.0 km Buffer</span>
-                            </div>
-                            <div class="flex justify-between">
-                                <span>Detections Visible:</span>
-                                <span class="text-white" id="visible-markers-count">0</span>
-                            </div>
-                            <!-- Dynamic Buffer Radius Control -->
-                            <div class="border-t border-slate-800 pt-2 mt-1">
-                                <div class="flex justify-between items-center mb-1">
-                                    <span class="text-slate-500 uppercase tracking-wide text-[9px]">Buffer Radius</span>
-                                    <span id="buffer-km-label" class="text-cyan-300 font-bold text-[10px]">1.0 km</span>
-                                </div>
-                                <input id="buffer-slider" type="range"
-                                    min="250" max="3000" step="250" value="1000"
-                                    class="w-full h-1 rounded-lg appearance-none cursor-pointer"
-                                    style="accent-color:#22d3ee;">
-                                <!-- Quick presets -->
-                                <div class="flex gap-1 mt-1.5 flex-wrap">
-                                    <button data-km="500"  class="buf-preset text-[8px] px-1.5 py-0.5 rounded border border-slate-700 text-slate-400 hover:border-cyan-400 hover:text-cyan-400 cursor-pointer transition-all">0.5km</button>
-                                    <button data-km="1000" class="buf-preset text-[8px] px-1.5 py-0.5 rounded border border-cyan-500 text-cyan-400 cursor-pointer transition-all">1km</button>
-                                    <button data-km="1500" class="buf-preset text-[8px] px-1.5 py-0.5 rounded border border-slate-700 text-slate-400 hover:border-cyan-400 hover:text-cyan-400 cursor-pointer transition-all">1.5km</button>
-                                    <button data-km="2000" class="buf-preset text-[8px] px-1.5 py-0.5 rounded border border-slate-700 text-slate-400 hover:border-cyan-400 hover:text-cyan-400 cursor-pointer transition-all">2km</button>
-                                    <button data-km="3000" class="buf-preset text-[8px] px-1.5 py-0.5 rounded border border-slate-700 text-slate-400 hover:border-cyan-400 hover:text-cyan-400 cursor-pointer transition-all">3km</button>
-                                </div>
-                            </div>
+                        <div class="divider"></div>
+                        <div class="info-row">
+                            <span>Active Zone:</span>
+                            <span class="val" id="active-zone-label" style="color:#f87171;">1.0 km Buffer</span>
+                        </div>
+                        <div class="info-row">
+                            <span>Detections:</span>
+                            <span class="val" id="visible-markers-count">0</span>
+                        </div>
+                        <div class="divider"></div>
+                        <div class="info-row">
+                            <span>Buffer Radius</span>
+                            <span class="val" id="buffer-km-label" style="color:#60a5fa;">1.0 km</span>
+                        </div>
+                        <input id="buffer-slider" type="range" min="250" max="3000" step="250" value="1000" style="margin-top:4px;">
+                        <div class="preset-row">
+                            <button data-km="500" class="buf-preset preset-btn">0.5km</button>
+                            <button data-km="1000" class="buf-preset preset-btn active">1km</button>
+                            <button data-km="1500" class="buf-preset preset-btn">1.5km</button>
+                            <button data-km="2000" class="buf-preset preset-btn">2km</button>
+                            <button data-km="3000" class="buf-preset preset-btn">3km</button>
                         </div>
                     </div>
 
-                    <!-- Map Container -->
-                    <div id="map" class="flex-grow w-full h-[300px] lg:h-full bg-slate-900" style="touch-action: pan-x pan-y;"></div>
+                    <!-- Map container -->
+                    <div id="map" style="flex:1; width:100%; min-height:300px; background:#111827; touch-action:pan-x pan-y;"></div>
 
-                    <!-- Follow Drone Toggle (top-right of map) -->
-                    <div id="map-controls" class="absolute top-3 right-3 z-[1001] flex flex-col gap-2">
-                        <button id="btn-follow-drone"
-                            class="flex items-center gap-1.5 bg-slate-950/90 border border-slate-700 text-slate-400 font-bold text-[10px] uppercase tracking-widest px-2.5 py-1.5 rounded transition-all select-none cursor-pointer"
-                            title="Toggle drone auto-follow">
-                            <span id="follow-icon" class="w-2 h-2 rounded-full bg-slate-600 inline-block"></span>
+                    <!-- Map control buttons -->
+                    <div id="map-controls" class="map-controls">
+                        <button id="btn-follow-drone" class="map-btn" title="Toggle drone auto-follow">
+                            <span id="follow-icon" class="dot" style="width:8px;height:8px;border-radius:50%;background:#6b7280;display:inline-block;"></span>
                             <span id="follow-label">Follow OFF</span>
                         </button>
-                        <button id="btn-recenter"
-                            class="bg-slate-950/90 border border-slate-700 text-slate-400 font-bold text-[10px] uppercase tracking-widest px-2.5 py-1.5 rounded transition-all select-none cursor-pointer"
-                            title="Jump to drone position">
-                            &#9654; Re-center
-                        </button>
+                        <button id="btn-recenter" class="map-btn" title="Jump to drone position">Re-center</button>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- ==================== TAB 2: INTELLIGENCE & AUDIT DATABASE ==================== -->
-        <div id="tab-audit" class="hidden flex-grow flex flex-col gap-6 min-h-0 overflow-y-auto">
-            
-            <!-- Statistical Performance Cards -->
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <!-- Card 1: Total Incidents -->
-                <div class="glass-panel p-5 rounded-lg border border-tactical-border relative overflow-hidden group">
-                    <div class="absolute -right-4 -bottom-4 text-slate-800/20 text-7xl font-extrabold group-hover:scale-110 transition-all">🚨</div>
-                    <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">Total Active Incidents</span>
-                    <h3 id="stat-incidents" class="text-3xl font-extrabold text-white mt-2 glow-text">0</h3>
-                    <p class="text-[10px] text-slate-400 uppercase mt-1">Within river reserve</p>
-                </div>
+        <!-- ══════════ TAB 2: INCIDENT REPORTS ══════════ -->
+        <div id="tab-audit" class="hidden flex-col" style="flex:1; gap:20px; overflow-y:auto;">
 
-                <!-- Card 2: Critical Sites -->
-                <div class="glass-panel p-5 rounded-lg border border-red-500/20 glow-border-critical relative overflow-hidden group">
-                    <div class="absolute -right-4 -bottom-4 text-red-500/10 text-7xl font-extrabold group-hover:scale-110 transition-all">⚠️</div>
-                    <span class="text-xs font-bold text-red-400 uppercase tracking-widest">Critical Alert Sites</span>
-                    <h3 id="stat-critical" class="text-3xl font-extrabold text-red-500 mt-2">0</h3>
-                    <p class="text-[10px] text-red-400 uppercase mt-1">JCB + Truck + Workers</p>
+            <!-- Stat cards -->
+            <div class="stat-grid">
+                <div class="stat-card">
+                    <div class="label">Total Incidents</div>
+                    <div class="value text-white" id="stat-incidents">0</div>
+                    <div class="sub">Within river reserve</div>
                 </div>
-
-                <!-- Card 3: Machinery Count -->
-                <div class="glass-panel p-5 rounded-lg border border-tactical-border relative overflow-hidden group">
-                    <div class="absolute -right-4 -bottom-4 text-slate-800/20 text-7xl font-extrabold group-hover:scale-110 transition-all">🚜</div>
-                    <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">Machinery Detected</span>
-                    <h3 id="stat-machinery" class="text-3xl font-extrabold text-yellow-400 mt-2">0</h3>
-                    <p class="text-[10px] text-slate-400 uppercase mt-1">JCBs & Trucks Combined</p>
+                <div class="stat-card" style="border-color:#991b1b;">
+                    <div class="label" style="color:#f87171;">Critical Alerts</div>
+                    <div class="value text-red" id="stat-critical">0</div>
+                    <div class="sub">High severity detections</div>
                 </div>
-
-                <!-- Card 4: Personnel Count -->
-                <div class="glass-panel p-5 rounded-lg border border-tactical-border relative overflow-hidden group">
-                    <div class="absolute -right-4 -bottom-4 text-slate-800/20 text-7xl font-extrabold group-hover:scale-110 transition-all">👥</div>
-                    <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">Personnel Tracked</span>
-                    <h3 id="stat-workers" class="text-3xl font-extrabold text-emerald-400 mt-2">0</h3>
-                    <p class="text-[10px] text-slate-400 uppercase mt-1">Active on illegal sites</p>
+                <div class="stat-card">
+                    <div class="label">Machinery Detected</div>
+                    <div class="value text-yellow" id="stat-machinery">0</div>
+                    <div class="sub">JCBs & Trucks combined</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">People Detected</div>
+                    <div class="value text-green" id="stat-workers">0</div>
+                    <div class="sub">Active on illegal sites</div>
                 </div>
             </div>
 
-            <!-- Incident Audit Grid (Split left table, right details card) -->
-            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-grow min-h-[400px]">
-                
-                <!-- Incidents Audit Table (7 Cols) -->
-                <div class="lg:col-span-7 glass-panel rounded-lg border border-tactical-border flex flex-col overflow-hidden">
-                    <div class="px-5 py-4 border-b border-tactical-border bg-slate-950/40 flex justify-between items-center">
-                        <h3 class="text-sm font-bold uppercase tracking-wider text-white">🚨 Historical Incidents Audit Logs</h3>
-                        <button id="refresh-audits" class="text-xs bg-slate-850 hover:bg-slate-800 border border-tactical-border hover:border-cyan-500/50 text-slate-300 font-bold px-3 py-1.5 rounded transition-all">
-                            🔄 Refresh Data
-                        </button>
+            <!-- Audit table + Evidence panel -->
+            <div class="grid-12" style="min-height:400px;">
+
+                <!-- Incidents table -->
+                <div class="card flex-col">
+                    <div style="padding:12px 16px; border-bottom:1px solid #374151; display:flex; justify-content:space-between; align-items:center;">
+                        <h3 style="font-size:14px; font-weight:700; color:#e5e7eb;">Incident History</h3>
+                        <button id="refresh-audits" class="btn">Refresh</button>
                     </div>
-                    <div class="flex-grow overflow-y-auto">
-                        <table class="w-full text-left text-xs border-collapse">
+                    <div class="flex-grow overflow-y">
+                        <table class="audit-table">
                             <thead>
-                                <tr class="bg-slate-950/70 border-b border-tactical-border text-slate-400 uppercase tracking-widest">
-                                    <th class="py-3.5 px-4 font-bold">ID</th>
-                                    <th class="py-3.5 px-4 font-bold">Timestamp</th>
-                                    <th class="py-3.5 px-4 font-bold">Centroid Lat / Lon</th>
-                                    <th class="py-3.5 px-4 font-bold text-center">Severity</th>
-                                    <th class="py-3.5 px-4 font-bold text-center">Buffer Status</th>
-                                    <th class="py-3.5 px-4 font-bold text-center">Actions</th>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Time</th>
+                                    <th>Location</th>
+                                    <th style="text-align:center;">Severity</th>
+                                    <th style="text-align:center;">Zone Status</th>
+                                    <th style="text-align:center;">Action</th>
                                 </tr>
                             </thead>
                             <tbody id="incident-audit-body">
                                 <tr>
-                                    <td colspan="6" class="py-8 text-center text-slate-500 uppercase tracking-wider">Loading Incident Records...</td>
+                                    <td colspan="6" style="padding:30px; text-align:center; color:#6b7280;">Loading incidents...</td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
                 </div>
 
-                <!-- Incident Evidence & Snapshot Panel (5 Cols) -->
-                <div class="lg:col-span-5 glass-panel rounded-lg border border-tactical-border p-5 flex flex-col justify-between overflow-hidden">
+                <!-- Evidence / detail panel -->
+                <div class="card" style="padding:16px; display:flex; flex-direction:column; justify-content:space-between;">
                     <div>
-                        <h3 class="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4 border-b border-tactical-border pb-2">&#128194; INCIDENT TARGETS &amp; EVIDENCE CARD</h3>
-                        
-                        <div id="evidence-empty" class="text-center py-10 text-slate-500 flex flex-col items-center gap-4">
-                            <span class="text-4xl">&#128193;</span>
-                            <span class="text-xs uppercase tracking-wider font-bold">Select an incident from the audit list to inspect clustered targets and evidence crops.</span>
+                        <h3 style="font-size:12px; font-weight:700; text-transform:uppercase; color:#6b7280; margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid #374151;">
+                            Incident Details & Evidence
+                        </h3>
+
+                        <!-- Empty state -->
+                        <div id="evidence-empty" style="text-align:center; padding:40px 0; color:#6b7280;">
+                            <div style="font-size:32px; margin-bottom:8px;">📂</div>
+                            <div style="font-size:12px; font-weight:500;">Select an incident from the table to view details.</div>
                         </div>
 
-                        <!-- Incident inspection details -->
-                        <div id="evidence-display" class="hidden flex flex-col gap-3">
-                            <div class="flex justify-between items-center">
-                                <span class="text-sm font-bold text-white uppercase flex items-center gap-1.5">
-                                    Incident ID: <strong id="ev-id" class="text-cyan-400">#0</strong>
+                        <!-- Filled state -->
+                        <div id="evidence-display" class="hidden" style="display:flex; flex-direction:column; gap:12px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span style="font-size:14px; font-weight:700; color:#e5e7eb;">
+                                    Incident <strong id="ev-id" style="color:#60a5fa;">#0</strong>
                                 </span>
-                                <span id="ev-severity-badge" class="px-2.5 py-1 text-[10px] font-bold rounded uppercase tracking-wider"></span>
+                                <span id="ev-severity-badge" class="badge"></span>
                             </div>
 
-                            <div class="grid grid-cols-2 gap-3 text-xs bg-slate-900/60 p-3 rounded-lg border border-tactical-border text-slate-300">
-                                <div><span class="text-slate-500">Centroid Lat:</span> <span id="ev-lat" class="mono block font-bold">0.0</span></div>
-                                <div><span class="text-slate-500">Centroid Lon:</span> <span id="ev-lon" class="mono block font-bold">0.0</span></div>
-                                <div><span class="text-slate-500">River Distance:</span> <span id="ev-dist" class="block font-bold">0.0m</span></div>
-                                <div><span class="text-slate-500">Timestamp:</span> <span id="ev-time" class="block">Never</span></div>
+                            <div class="ev-grid">
+                                <div><span class="lbl">Latitude:</span> <span id="ev-lat" class="val mono">0.0</span></div>
+                                <div><span class="lbl">Longitude:</span> <span id="ev-lon" class="val mono">0.0</span></div>
+                                <div><span class="lbl">River Distance:</span> <span id="ev-dist" class="val">0.0m</span></div>
+                                <div><span class="lbl">Time:</span> <span id="ev-time" class="val">Never</span></div>
                             </div>
 
-                            <!-- Evidence image crop -->
+                            <!-- Evidence image -->
                             <div id="ev-image-container" class="hidden">
-                                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">&#128247; Evidence Snapshot:</span>
-                                <img id="ev-image" src="" alt="Evidence" class="mx-auto rounded border border-cyan-500/20 object-contain max-h-36 bg-slate-900">
+                                <div style="font-size:11px; font-weight:600; color:#6b7280; margin-bottom:4px;">Evidence Snapshot:</div>
+                                <img id="ev-image" src="" alt="Evidence" style="max-height:140px; border-radius:4px; border:1px solid #374151; background:#111827; object-fit:contain; display:block; margin:0 auto;">
                             </div>
 
-                            <!-- Bounding boxes within this cluster with class labels -->
+                            <!-- Detections list -->
                             <div>
-                                <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">&#128230; Detected Clustered Objects:</span>
-                                <div id="ev-detections-list" class="flex flex-col gap-1.5 max-h-[120px] overflow-y-auto pr-1">
-                                    <!-- Targets go here -->
+                                <div style="font-size:11px; font-weight:600; color:#6b7280; margin-bottom:4px;">Detected Objects:</div>
+                                <div id="ev-detections-list" style="display:flex; flex-direction:column; gap:4px; max-height:120px; overflow-y:auto;">
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Downloader -->
-                    <div id="evidence-action-bar" class="hidden border-t border-tactical-border pt-4 mt-3 flex flex-col gap-2">
-                        <button id="btn-export-pdf" class="w-full bg-cyan-700 hover:bg-cyan-600 text-white font-bold text-xs uppercase tracking-widest py-2.5 rounded transition-all shadow-lg hover:shadow-cyan-500/20 flex items-center justify-center gap-2">
-                            &#128229; Download Full PDF Report
+                    <!-- Export buttons -->
+                    <div id="evidence-action-bar" class="hidden" style="border-top:1px solid #374151; padding-top:12px; margin-top:12px; display:flex; flex-direction:column; gap:8px;">
+                        <button id="btn-export-pdf" class="btn btn-primary" style="width:100%; justify-content:center; padding:10px;">
+                            Download Full PDF Report
                         </button>
-                        <button id="btn-export-pdf-critical" class="w-full bg-red-900/60 hover:bg-red-800/80 border border-red-500/30 text-red-400 font-bold text-xs uppercase tracking-widest py-2 rounded transition-all flex items-center justify-center gap-2">
-                            &#9888; Export CRITICAL Incidents Only
+                        <button id="btn-export-pdf-critical" class="btn btn-danger" style="width:100%; justify-content:center; padding:8px;">
+                            Export Critical Incidents Only
                         </button>
                     </div>
                 </div>
@@ -434,41 +458,34 @@
         </div>
     </main>
 
-    <!-- ==================== FRONTEND CONTROLLER LOGIC ==================== -->
+    <!-- ═══════════════════════ JAVASCRIPT (UNCHANGED LOGIC) ═══════════════════════ -->
     <script>
         // DOM Handles
         const tabTactical = document.getElementById('tab-tactical');
         const tabAudit = document.getElementById('tab-audit');
         const btnTabTactical = document.getElementById('btn-tab-tactical');
         const btnTabAudit = document.getElementById('btn-tab-audit');
-        
+
         // Tab switching
         btnTabTactical.addEventListener('click', () => {
             tabTactical.classList.remove('hidden');
             tabAudit.classList.add('hidden');
-            btnTabTactical.className = "px-6 py-3.5 border-b-2 border-cyan-400 text-cyan-400 font-semibold tracking-wider text-sm flex items-center gap-2 transition-all";
-            btnTabAudit.className = "px-6 py-3.5 border-b-2 border-transparent text-slate-400 hover:text-white font-semibold tracking-wider text-sm flex items-center gap-2 transition-all";
-            
-            // Recalculate map size if tab was hidden
+            btnTabTactical.classList.add('active');
+            btnTabAudit.classList.remove('active');
             setTimeout(() => { map.invalidateSize() }, 100);
         });
 
         btnTabAudit.addEventListener('click', () => {
             tabAudit.classList.remove('hidden');
             tabTactical.classList.add('hidden');
-            btnTabAudit.className = "px-6 py-3.5 border-b-2 border-cyan-400 text-cyan-400 font-semibold tracking-wider text-sm flex items-center gap-2 transition-all";
-            btnTabTactical.className = "px-6 py-3.5 border-b-2 border-transparent text-slate-400 hover:text-white font-semibold tracking-wider text-sm flex items-center gap-2 transition-all";
+            btnTabAudit.classList.add('active');
+            btnTabTactical.classList.remove('active');
             loadAuditData();
         });
 
-        // Initialize Leaflet Map (Satellite / Surveillance view look)
-        // Initial view: centre of Assam along the Brahmaputra
-        // The map will auto-fit to the full river extent once the centerline loads.
-        const map = L.map('map', {
-            zoomControl: false
-        }).setView([26.55, 92.80], 7);
+        // Initialize Leaflet Map
+        const map = L.map('map', { zoomControl: false }).setView([26.55, 92.80], 7);
 
-        // Load Satellite Tiles (Standard satellite view)
         const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
         }).addTo(map);
@@ -477,18 +494,14 @@
             attribution: '&copy; <a href="https://carto.com/">CARTO</a>'
         });
 
-        // Layer Control
         L.control.layers({
-            "Surveillance Satellite": satelliteLayer,
-            "Tactical Dark Radar": standardLayer
+            "Satellite": satelliteLayer,
+            "Standard Map": standardLayer
         }, null, { position: 'bottomright' }).addTo(map);
-        
+
         L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-        // ── Wire up map control buttons ────────────────────────────────────────
-        // Must happen AFTER map is created so L.DomEvent is available.
-        // L.DomEvent.disableClickPropagation stops Leaflet from swallowing
-        // click events that land on our overlay buttons.
+        // Wire up map control buttons
         (function wireMapControls() {
             const controlsDiv = document.getElementById('map-controls');
             L.DomEvent.disableClickPropagation(controlsDiv);
@@ -505,40 +518,30 @@
                 else map.flyToBounds([[26.02, 89.97], [27.50, 95.50]], { padding: [20, 20] });
             });
         })();
-        // ──────────────────────────────────────────────────────────────────────
 
-        // Real-time Flight Trailing & Drone Marker
+        // Flight trail
         let flightTrail = L.polyline([], {
-            color: '#00f0ff',
-            weight: 3.5,
-            opacity: 0.8,
+            color: '#3b82f6',
+            weight: 2.5,
+            opacity: 0.7,
             dashArray: '5, 8'
         }).addTo(map);
 
-        // Custom Glowing Neon Drone Icon
+        // Drone icon
         const droneIcon = L.divIcon({
             html: `
-                <div class="relative flex items-center justify-center">
-                    <span class="animate-ping absolute inline-flex h-8 w-8 rounded-full bg-cyan-400 opacity-60"></span>
-                    <div class="w-4 h-4 bg-cyan-400 border-2 border-white rounded-full flex items-center justify-center shadow-lg">
-                        <div class="w-1.5 h-1.5 bg-slate-900 rounded-full"></div>
-                    </div>
+                <div style="position:relative; display:flex; align-items:center; justify-content:center;">
+                    <div style="width:12px; height:12px; background:#3b82f6; border:2px solid white; border-radius:50%; box-shadow:0 0 6px rgba(59,130,246,0.6);"></div>
                 </div>
             `,
             className: 'custom-drone-icon',
-            iconSize: [20, 20]
+            iconSize: [16, 16]
         });
 
-        // Drone marker — starts invisible (no GPS yet), moves to real position on first telemetry
-        // We place it at [0,0] and make opacity=0 until first telemetry update arrives.
         let droneMarker = L.marker([0, 0], { icon: droneIcon, opacity: 0 }).addTo(map);
-
-        // Array to store active detection markers on map
         let detectionMarkers = [];
-
-        // Drone follow mode — OFF by default so user can freely drag the map
         let followDrone = false;
-        let lastDroneLatlng = null;  // null until first real telemetry arrives
+        let lastDroneLatlng = null;
 
         function toggleFollow() {
             followDrone = !followDrone;
@@ -546,27 +549,22 @@
             const lbl  = document.getElementById('follow-label');
             const btn  = document.getElementById('btn-follow-drone');
             if (followDrone) {
-                icon.style.cssText = 'width:.5rem;height:.5rem;border-radius:9999px;background:#22d3ee;display:inline-block;animation:ping 1s cubic-bezier(0,0,.2,1) infinite';
+                icon.style.cssText = 'width:8px;height:8px;border-radius:50%;background:#3b82f6;display:inline-block;';
                 lbl.textContent = 'Follow ON';
-                btn.style.color = '#22d3ee';
-                btn.style.borderColor = '#22d3ee';
-                map.setView(lastDroneLatlng, map.getZoom());
+                btn.style.color = '#60a5fa';
+                btn.style.borderColor = '#3b82f6';
+                if (lastDroneLatlng) map.setView(lastDroneLatlng, map.getZoom());
             } else {
-                icon.style.cssText = 'width:.5rem;height:.5rem;border-radius:9999px;background:#475569;display:inline-block';
+                icon.style.cssText = 'width:8px;height:8px;border-radius:50%;background:#6b7280;display:inline-block;';
                 lbl.textContent = 'Follow OFF';
                 btn.style.color = '';
                 btn.style.borderColor = '';
             }
         }
 
-        // Global variable for active class filters (The user's requested core feature!)
-        let activeFilters = {
-            person: true,
-            jcb: true,
-            truck: true
-        };
+        // Class filters
+        let activeFilters = { person: true, jcb: true, truck: true };
 
-        // Class Filters Handlers
         const filterAll = document.getElementById('filter-all');
         const classFilterCheckboxes = document.querySelectorAll('.class-filter');
 
@@ -583,62 +581,37 @@
             cb.addEventListener('change', (e) => {
                 const type = e.target.id.replace('filter-', '');
                 activeFilters[type] = e.target.checked;
-                
-                // If any checkbox is unchecked, turn off "All Targets" checked status
-                if (!e.target.checked) {
-                    filterAll.checked = false;
-                }
-                
-                // If all checkboxes are checked, turn on "All Targets"
+                if (!e.target.checked) { filterAll.checked = false; }
                 const allChecked = Array.from(classFilterCheckboxes).every(c => c.checked);
-                if (allChecked) {
-                    filterAll.checked = true;
-                }
-                
+                if (allChecked) { filterAll.checked = true; }
                 renderActiveMarkers();
             });
         });
 
-        // ── Dynamic Buffer via Turf.js ─────────────────────────────────────────
-        // Loads river centerline once, then redraws buffer client-side on demand.
-        let bufferLayer = null;        // Current Leaflet GeoJSON layer for buffer
-        let centerlineGeoJSON = null;  // Cached centerline feature
-        let currentBufferM = 1000;     // Current radius in metres
+        // ── Dynamic Buffer via Turf.js ──────────────────────────────────
+        let bufferLayer = null;
+        let centerlineGeoJSON = null;
+        let currentBufferM = 1000;
 
         function drawBuffer(radiusM) {
             if (!centerlineGeoJSON) return;
             currentBufferM = radiusM;
-
-            // Turf.js buffer — units: 'kilometers'
             const buffered = turf.buffer(centerlineGeoJSON, radiusM / 1000, { units: 'kilometers', steps: 32 });
-
-            // Remove old layer
             if (bufferLayer) map.removeLayer(bufferLayer);
-
-            // Draw new layer
             bufferLayer = L.geoJSON(buffered, {
-                style: {
-                    color: '#ef4444',
-                    weight: 2,
-                    fillColor: '#ef4444',
-                    fillOpacity: 0.13,
-                    dashArray: '4, 6'
-                }
+                style: { color: '#ef4444', weight: 2, fillColor: '#ef4444', fillOpacity: 0.13, dashArray: '4, 6' }
             }).addTo(map);
 
-            // Update HUD labels
             const km = (radiusM / 1000).toFixed(radiusM % 1000 === 0 ? 0 : 1);
             document.getElementById('active-zone-label').textContent = `${km} km Buffer`;
             document.getElementById('buffer-km-label').textContent   = `${(radiusM/1000).toFixed(1)} km`;
         }
 
-        // Fetch centerline (lightweight — only fetched once, cache-busted for real-time updates)
         fetch('/data/legal_zones/river_centerline.geojson?v=' + Date.now())
             .then(r => { if (!r.ok) throw new Error('Centerline unavailable'); return r.json(); })
             .then(gj => {
                 centerlineGeoJSON = gj;
-                drawBuffer(1000); // Draw default 1km buffer on load
-                // Auto-fit map to the full river extent (entire Assam stretch)
+                drawBuffer(1000);
                 const coords = gj.features[0].geometry.coordinates;
                 const lats = coords.map(c => c[1]);
                 const lons = coords.map(c => c[0]);
@@ -648,7 +621,6 @@
             })
             .catch(err => {
                 console.warn('Could not load centerline for dynamic buffer:', err);
-                // Fallback: try to load the pre-generated static buffer
                 fetch('/data/legal_zones/river_buffer_1km.geojson?v=' + Date.now())
                     .then(r => r.json())
                     .then(geo => {
@@ -658,17 +630,15 @@
                     }).catch(() => {});
             });
 
-        // Wire buffer slider + preset buttons AFTER map is ready
+        // Wire buffer slider + preset buttons
         (function wireBufferControls() {
             const hudDiv  = document.getElementById('map-hud');
             const slider  = document.getElementById('buffer-slider');
             const presets = document.querySelectorAll('.buf-preset');
 
-            // Tell Leaflet not to eat events on the HUD panel
             L.DomEvent.disableClickPropagation(hudDiv);
             L.DomEvent.disableScrollPropagation(hudDiv);
 
-            // ── Sync radius to server (debounced — fires on slider release, not drag) ──
             function pushRadiusToServer(radius_m) {
                 fetch('/api/zone/radius', {
                     method: 'POST',
@@ -676,23 +646,18 @@
                     body: JSON.stringify({ radius_m })
                 })
                 .then(r => r.json())
-                .then(res => {
-                    console.log(`Zone enforcement updated to ${res.radius_m}m on server`);
-                })
+                .then(res => { console.log(`Zone updated to ${res.radius_m}m`); })
                 .catch(err => console.warn('Zone radius sync failed:', err));
             }
 
-            // 'input' → live map redraw (visual only, no server call while dragging)
             slider.addEventListener('input', function() {
                 drawBuffer(parseInt(this.value));
                 presets.forEach(b => {
                     const active = parseInt(b.dataset.km) === parseInt(this.value);
-                    b.style.borderColor = active ? '#22d3ee' : '';
-                    b.style.color       = active ? '#22d3ee' : '';
+                    b.classList.toggle('active', active);
                 });
             });
 
-            // 'change' → fires on mouseup/touchend → push to server ONCE per gesture
             slider.addEventListener('change', function() {
                 pushRadiusToServer(parseInt(this.value));
             });
@@ -704,27 +669,17 @@
                     slider.value = m;
                     drawBuffer(m);
                     pushRadiusToServer(m);
-                    presets.forEach(b => {
-                        const active = parseInt(b.dataset.km) === m;
-                        b.style.borderColor = active ? '#22d3ee' : '';
-                        b.style.color       = active ? '#22d3ee' : '';
-                    });
+                    presets.forEach(b => b.classList.toggle('active', parseInt(b.dataset.km) === m));
                 });
             });
 
-            // Sync slider state from server on page load
             fetch('/api/zone/radius')
                 .then(r => r.json())
-                .then(res => {
-                    slider.value = res.radius_m;
-                    // drawBuffer called after centerline loads
-                })
+                .then(res => { slider.value = res.radius_m; })
                 .catch(() => {});
-
         })();
-        // ──────────────────────────────────────────────────────────────────────
 
-        // Establish WebSockets Connection to FastAPI Backend
+        // ── WebSocket ───────────────────────────────────────────────────
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws`;
         let ws;
@@ -734,19 +689,18 @@
 
             ws.onopen = () => {
                 const statusSpan = document.getElementById('connection-status');
-                statusSpan.className = "font-bold text-emerald-400 flex items-center gap-1.5 uppercase tracking-wide";
-                statusSpan.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400 inline-block animate-ping"></span> ONLINE`;
+                statusSpan.style.color = '#22c55e';
+                statusSpan.innerHTML = `<span class="dot dot-green"></span> Online`;
             };
 
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
-                
+
                 if (data.type === 'telemetry') {
                     handleTelemetryUpdate(data.payload);
                 } else if (data.type === 'detections') {
                     handleDetectionsAlert(data.payload);
                 } else if (data.type === 'zone_radius_update') {
-                    // Server rebuilt the zone — sync map buffer to match
                     const r = data.payload.radius_m;
                     const slider = document.getElementById('buffer-slider');
                     if (slider && parseInt(slider.value) !== r) {
@@ -758,68 +712,54 @@
 
             ws.onclose = () => {
                 const statusSpan = document.getElementById('connection-status');
-                statusSpan.className = "font-bold text-red-500 flex items-center gap-1.5 uppercase tracking-wide";
-                statusSpan.innerHTML = `<span class="w-2 h-2 rounded-full bg-red-500 inline-block animate-pulse"></span> OFFLINE`;
-                
-                // Reconnect retry
+                statusSpan.style.color = '#ef4444';
+                statusSpan.innerHTML = `<span class="dot dot-red"></span> Offline`;
                 setTimeout(connectWebSocket, 3000);
             };
         }
 
-        // Handle Telemetry Logs Live Update
+        // Telemetry handler
         function handleTelemetryUpdate(tele) {
-            // Update HUD text elements
             document.getElementById('hud-battery').textContent = `${tele.battery}%`;
             document.getElementById('battery-bar').style.width = `${tele.battery}%`;
             document.getElementById('hud-altitude').textContent = `${tele.altitude.toFixed(1)}m`;
             document.getElementById('hud-speed').textContent = `${(tele.speed * 3.6).toFixed(1)} km/h`;
             document.getElementById('hud-coordinates').textContent = `${tele.lat.toFixed(5)}, ${tele.lon.toFixed(5)}`;
-            
-            // In Tactical stream panel raw metadata
             document.getElementById('raw-stream-time').textContent = new Date(tele.timestamp).toLocaleTimeString();
-            
-            // Shift drone icon on map and append coordinates to polyline trail
+
             const latlng = [tele.lat, tele.lon];
             lastDroneLatlng = latlng;
             droneMarker.setLatLng(latlng);
-            droneMarker.setOpacity(1);  // Make visible on first real GPS fix
+            droneMarker.setOpacity(1);
             flightTrail.addLatLng(latlng);
 
-            // Only auto-pan if follow mode is ON
             if (followDrone) {
                 map.panTo(latlng, { animate: true, duration: 0.5 });
             }
         }
 
-        // Handle Bounding Box Live Alerts
+        // Detections handler
         function handleDetectionsAlert(event) {
-            // event contains list of detections and incident severity
-            document.getElementById('detection-indicator').textContent = `${event.severity} SEVERITY INCIDENT`;
-            document.getElementById('detection-indicator').className = `font-bold uppercase tracking-wider ${
-                event.severity === 'CRITICAL' ? 'text-red-500 animate-pulse' : 'text-yellow-400'
-            }`;
-            
-            // Plot new markers from this event
+            const indicator = document.getElementById('detection-indicator');
+            indicator.textContent = `${event.severity} severity alert`;
+            indicator.style.color = event.severity === 'CRITICAL' ? '#f87171' : '#fbbf24';
+            indicator.style.fontWeight = '700';
+
             event.detections.forEach(det => {
-                const markerData = {
-                    lat: det.lat,
-                    lon: det.lon,
+                detectionMarkers.push({
+                    lat: det.lat, lon: det.lon,
                     class_name: det.class_name,
                     confidence: det.confidence,
                     incident_id: event.incident_id
-                };
-                detectionMarkers.push(markerData);
+                });
             });
-            
+
             renderActiveMarkers();
-            
-            // Auto-refresh audit records and statistics in real-time
             loadAuditData();
         }
 
-        // Renders markers based on Active Filters checkboxes
+        // Render map markers based on filters
         function renderActiveMarkers() {
-            // Clear existing map layers for markers
             map.eachLayer(layer => {
                 if (layer instanceof L.Marker && layer !== droneMarker) {
                     map.removeLayer(layer);
@@ -829,38 +769,25 @@
             let visibleCount = 0;
 
             detectionMarkers.forEach(det => {
-                // Core Filter check
                 if (!activeFilters[det.class_name]) return;
-
                 visibleCount++;
 
-                // Custom Color marker pins: Red (Critical: Human worker), Yellow (Machinery)
-                let markerColor = '#f59e0b'; // Yellow for machinery (Truck/JCB)
-                if (det.class_name === 'person') {
-                    markerColor = '#10b981'; // Green for Personnel
-                }
-
-                const markerHtml = `
-                    <div class="relative flex items-center justify-center">
-                        <span class="absolute inline-flex h-5 w-5 rounded-full" style="background-color: ${markerColor}; opacity: 0.4;"></span>
-                        <div class="w-3 h-3 rounded-full border border-white shadow-lg" style="background-color: ${markerColor};"></div>
-                    </div>
-                `;
+                let markerColor = '#fbbf24'; // Yellow for machinery
+                if (det.class_name === 'person') markerColor = '#22c55e';
 
                 const icon = L.divIcon({
-                    html: markerHtml,
+                    html: `<div style="width:10px;height:10px;background:${markerColor};border:1.5px solid white;border-radius:50%;box-shadow:0 0 4px ${markerColor};"></div>`,
                     className: 'custom-detection-marker',
-                    iconSize: [12, 12]
+                    iconSize: [10, 10]
                 });
 
                 L.marker([det.lat, det.lon], { icon })
                     .addTo(map)
                     .bindPopup(`
-                        <div class="text-xs p-1 text-slate-800 font-sans">
-                            <span class="block font-bold uppercase text-slate-500 tracking-wider">Detection Details</span>
-                            <span class="block mt-1 font-extrabold uppercase text-sm ${det.class_name === 'person' ? 'text-emerald-600' : 'text-amber-600'}">${det.class_name}</span>
-                            <span class="block text-slate-600 font-medium">Confidence: <strong>${(det.confidence * 100).toFixed(0)}%</strong></span>
-                            <span class="block text-[10px] text-slate-400 mono mt-0.5">${det.lat.toFixed(5)}, ${det.lon.toFixed(5)}</span>
+                        <div style="font-family:Inter,sans-serif; font-size:12px; padding:4px; color:#1f2937;">
+                            <strong style="text-transform:uppercase; color:${det.class_name === 'person' ? '#16a34a' : '#d97706'};">${det.class_name}</strong><br>
+                            Confidence: <strong>${(det.confidence * 100).toFixed(0)}%</strong><br>
+                            <span style="font-size:10px; color:#6b7280;" class="mono">${det.lat.toFixed(5)}, ${det.lon.toFixed(5)}</span>
                         </div>
                     `);
             });
@@ -868,10 +795,8 @@
             document.getElementById('visible-markers-count').textContent = visibleCount;
         }
 
-        // ==================== TAB 2: AUDIT DATABASE CONTROLLER ====================
-        
+        // ── TAB 2: Audit data loader ────────────────────────────────────
         function loadAuditData() {
-            // Fetch stats from app.py
             fetch('/api/stats')
                 .then(res => res.json())
                 .then(stats => {
@@ -881,40 +806,35 @@
                     document.getElementById('stat-workers').textContent = stats.detections_count.person;
                 });
 
-            // Fetch incidents list
             fetch('/api/incidents')
                 .then(res => res.json())
                 .then(incidents => {
                     const tbody = document.getElementById('incident-audit-body');
                     if (incidents.length === 0) {
-                        tbody.innerHTML = `<tr><td colspan="6" class="py-8 text-center text-slate-500 uppercase">No Incident Records Found</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="6" style="padding:30px; text-align:center; color:#6b7280;">No incidents recorded yet.</td></tr>`;
                         return;
                     }
-                    
+
                     tbody.innerHTML = '';
                     incidents.forEach(inc => {
                         const tr = document.createElement('tr');
-                        tr.className = "border-b border-tactical-border hover:bg-slate-900/50 cursor-pointer transition-all";
                         tr.onclick = () => selectIncidentForInspection(inc);
-                        
-                        let severityClass = "text-yellow-500 bg-yellow-500/10 border-yellow-500/20";
-                        if (inc.severity === 'CRITICAL') severityClass = "text-red-500 bg-red-500/10 border-red-500/20";
-                        else if (inc.severity === 'LOW') severityClass = "text-emerald-500 bg-emerald-500/10 border-emerald-500/20";
-                        
+
+                        let badgeClass = 'badge-low';
+                        if (inc.severity === 'CRITICAL') badgeClass = 'badge-critical';
+                        else if (inc.severity === 'HIGH') badgeClass = 'badge-high';
+                        else if (inc.severity === 'MEDIUM') badgeClass = 'badge-medium';
+
                         tr.innerHTML = `
-                            <td class="py-3.5 px-4 font-bold text-cyan-400">#${inc.id}</td>
-                            <td class="py-3.5 px-4 text-slate-400">${new Date(inc.timestamp).toLocaleString()}</td>
-                            <td class="py-3.5 px-4 mono text-slate-300 font-medium">${inc.centroid_latitude.toFixed(5)}, ${inc.centroid_longitude.toFixed(5)}</td>
-                            <td class="py-3.5 px-4 text-center">
-                                <span class="px-2 py-0.5 text-[9px] font-bold rounded border uppercase ${severityClass}">${inc.severity}</span>
+                            <td style="font-weight:700; color:#60a5fa;">#${inc.id}</td>
+                            <td style="color:#9ca3af;">${new Date(inc.timestamp).toLocaleString()}</td>
+                            <td class="mono" style="color:#d1d5db;">${inc.centroid_latitude.toFixed(5)}, ${inc.centroid_longitude.toFixed(5)}</td>
+                            <td style="text-align:center;"><span class="badge ${badgeClass}">${inc.severity}</span></td>
+                            <td style="text-align:center;">
+                                <span class="badge ${inc.illegal_zone ? 'badge-violation' : 'badge-outside'}">${inc.illegal_zone ? 'Buffer Violation' : 'Outside Buffer'}</span>
                             </td>
-                            <td class="py-3.5 px-4 text-center">
-                                <span class="px-2 py-0.5 text-[9px] font-bold rounded border uppercase ${
-                                    inc.illegal_zone ? 'text-red-400 bg-red-500/5 border-red-500/20' : 'text-slate-400 bg-slate-500/5 border-slate-500/20'
-                                }">${inc.illegal_zone ? 'Buffer Violation' : 'Outside Buffer'}</span>
-                            </td>
-                            <td class="py-3.5 px-4 text-center">
-                                <button class="bg-cyan-950/60 text-cyan-400 border border-cyan-500/30 font-bold text-[9px] uppercase px-2 py-1 rounded hover:bg-cyan-900 transition-all">Inspect</button>
+                            <td style="text-align:center;">
+                                <button class="btn" style="font-size:10px; padding:4px 10px;">View</button>
                             </td>
                         `;
                         tbody.appendChild(tr);
@@ -922,31 +842,27 @@
                 });
         }
 
-        // Selection of Incident in Inspection Card
+        // Incident detail view
         function selectIncidentForInspection(inc) {
             document.getElementById('evidence-empty').classList.add('hidden');
             document.getElementById('evidence-display').classList.remove('hidden');
             document.getElementById('evidence-action-bar').classList.remove('hidden');
-            
-            // Map details
+
             document.getElementById('ev-id').textContent = `#${inc.id}`;
             document.getElementById('ev-lat').textContent = inc.centroid_latitude.toFixed(6);
             document.getElementById('ev-lon').textContent = inc.centroid_longitude.toFixed(6);
             document.getElementById('ev-dist').textContent = inc.distance_to_river_m ? `${inc.distance_to_river_m.toFixed(1)}m` : 'N/A';
             document.getElementById('ev-time').textContent = new Date(inc.timestamp).toLocaleString();
-            
+
             const sevBadge = document.getElementById('ev-severity-badge');
             sevBadge.textContent = inc.severity;
-            if (inc.severity === 'CRITICAL') sevBadge.className = "px-2.5 py-1 text-[10px] font-bold rounded uppercase tracking-wider text-red-500 bg-red-500/10 border border-red-500/20";
-            else if (inc.severity === 'HIGH') sevBadge.className = "px-2.5 py-1 text-[10px] font-bold rounded uppercase tracking-wider text-amber-500 bg-amber-500/10 border border-amber-500/20";
-            else sevBadge.className = "px-2.5 py-1 text-[10px] font-bold rounded uppercase tracking-wider text-emerald-500 bg-emerald-500/10 border border-emerald-500/20";
+            if (inc.severity === 'CRITICAL') sevBadge.className = 'badge badge-critical';
+            else if (inc.severity === 'HIGH') sevBadge.className = 'badge badge-high';
+            else sevBadge.className = 'badge badge-low';
 
-            // Show evidence image if saved on Jetson/cloud
             const imgContainer = document.getElementById('ev-image-container');
-            const imgEl        = document.getElementById('ev-image');
+            const imgEl = document.getElementById('ev-image');
             if (inc.evidence_image_path) {
-                // evidence_image_path is like 'data/detections/evidence_42_jcb_....jpg'
-                // Extract filename and load via /api/evidence/<filename>
                 const fname = inc.evidence_image_path.split(/[\\/]/).pop();
                 imgEl.src = `/api/evidence/${fname}`;
                 imgEl.onerror = () => { imgContainer.classList.add('hidden'); };
@@ -955,42 +871,40 @@
                 imgContainer.classList.add('hidden');
             }
 
-            // Fetch detections belonging to this specific cluster (Filtering by incident_id!)
             fetch(`/api/detections?incident_id=${inc.id}`)
                 .then(res => res.json())
                 .then(detections => {
                     const listContainer = document.getElementById('ev-detections-list');
                     listContainer.innerHTML = '';
-                    
+
                     if (detections.length === 0) {
-                        listContainer.innerHTML = '<div class="text-slate-500 text-xs py-2">No detections linked to this incident.</div>';
+                        listContainer.innerHTML = '<div style="color:#6b7280; font-size:12px; padding:8px 0;">No detections linked to this incident.</div>';
                         return;
                     }
 
                     detections.forEach(det => {
-                        let colorClass = "text-amber-400";
-                        if (det.class_name === 'person') colorClass = "text-emerald-400";
-                        else if (det.class_name === 'jcb') colorClass = "text-yellow-400";
-                        
+                        let dotColor = '#fbbf24';
+                        if (det.class_name === 'person') dotColor = '#22c55e';
+                        else if (det.class_name === 'jcb') dotColor = '#eab308';
+
                         const row = document.createElement('div');
-                        row.className = "flex justify-between items-center bg-slate-950/80 p-2 rounded border border-tactical-border text-xs";
+                        row.style.cssText = 'display:flex; justify-content:space-between; align-items:center; background:#111827; padding:6px 10px; border-radius:4px; border:1px solid #374151; font-size:12px;';
                         row.innerHTML = `
-                            <span class="font-bold uppercase ${colorClass} flex items-center gap-1.5">
-                                <span class="w-1.5 h-1.5 rounded-full inline-block" style="background-color: currentColor;"></span> ${det.class_name}
+                            <span style="font-weight:600; text-transform:uppercase; color:${dotColor}; display:flex; align-items:center; gap:6px;">
+                                <span style="width:6px; height:6px; border-radius:50%; background:${dotColor}; display:inline-block;"></span> ${det.class_name}
                             </span>
-                            <span class="text-slate-400 font-medium">Conf: <strong>${(det.confidence * 100).toFixed(0)}%</strong></span>
-                            <span class="mono text-[9px] text-slate-500">${det.latitude ? det.latitude.toFixed(5) : 'N/A'}, ${det.longitude ? det.longitude.toFixed(5) : 'N/A'}</span>
+                            <span style="color:#9ca3af;">Conf: <strong>${(det.confidence * 100).toFixed(0)}%</strong></span>
+                            <span class="mono" style="font-size:10px; color:#6b7280;">${det.latitude ? det.latitude.toFixed(5) : 'N/A'}, ${det.longitude ? det.longitude.toFixed(5) : 'N/A'}</span>
                         `;
                         listContainer.appendChild(row);
                     });
                 });
         }
 
-        // Click listeners
+        // Button handlers
         document.getElementById('refresh-audits').addEventListener('click', loadAuditData);
 
         document.getElementById('btn-export-pdf').addEventListener('click', () => {
-            // Real PDF download — triggers /api/report/pdf which generates and streams the file
             const link = document.createElement('a');
             link.href = '/api/report/pdf';
             link.download = 'sand_mining_report.pdf';
@@ -1008,7 +922,7 @@
             document.body.removeChild(link);
         });
 
-        // Initialize WebSockets on startup
+        // Initialize
         connectWebSocket();
     </script>
 </body>
