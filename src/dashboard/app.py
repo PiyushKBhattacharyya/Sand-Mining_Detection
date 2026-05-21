@@ -216,6 +216,8 @@ flight_config = {
     "detection_enabled": False,
 }
 
+latest_drone_coords = {"lat": 0.0, "lon": 0.0}
+
 # Store active websocket connections
 class ConnectionManager:
     def __init__(self):
@@ -407,22 +409,6 @@ async def _webcam_telemetry_simulation_loop():
             # ── Process active webcam detections mapped to this GPS location! ──
             active_dets = list(latest_webcam_detections)
 
-            # If no real webcam detections, simulate random detections with all classes
-            if not active_dets and random.random() < 0.15:
-                sim_classes = ['person', 'jcb', 'truck']
-                # Vary how many classes appear (1-3 randomly)
-                num_classes = random.choices([1, 2, 3], weights=[50, 30, 20])[0]
-                chosen_classes = random.sample(sim_classes, num_classes)
-                for cls in chosen_classes:
-                    active_dets.append({
-                        'class_name': cls,
-                        'confidence': round(random.uniform(0.55, 0.95), 2),
-                        'bbox_x_min': random.randint(100, 400),
-                        'bbox_y_min': random.randint(100, 400),
-                        'bbox_x_max': random.randint(500, 800),
-                        'bbox_y_max': random.randint(500, 800),
-                    })
-
             if active_dets:
                 mapped_dets = []
                 for idx, det in enumerate(active_dets):
@@ -600,6 +586,10 @@ async def receive_edge_sync(data: Dict[str, Any]):
 
     # If payload contains a base64 evidence image, decode and save it cloud-side
     payload = data.get("payload", {})
+    if data.get("type") == "telemetry":
+        global latest_drone_coords
+        latest_drone_coords["lat"] = float(payload.get("lat", 0.0))
+        latest_drone_coords["lon"] = float(payload.get("lon", 0.0))
     img_b64 = payload.pop("evidence_image_b64", None)
     if img_b64:
         try:

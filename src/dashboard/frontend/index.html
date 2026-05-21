@@ -1475,7 +1475,7 @@
             document.body.removeChild(link);
         });
 
-                // ── FLIGHT COMMAND SYSTEM HANDLERS (MAP INTERACTION & UPDATE) ──
+                    // ── FLIGHT COMMAND SYSTEM HANDLERS (MAP INTERACTION & UPDATE) ──
         (function setupFlightConfigHandlers() {
             const btnSave = document.getElementById('btn-save-flight-cfg');
             const modelSelect = document.getElementById('model-select');
@@ -1486,48 +1486,92 @@
             let startGeofenceMarker = null;
             let startGeofenceCircle = null;
 
+            // Make text inputs read-only so the user never has to manually type coordinates!
+            latInput.setAttribute('readonly', true);
+            lonInput.setAttribute('readonly', true);
+            latInput.style.cursor = 'not-allowed';
+            lonInput.style.cursor = 'not-allowed';
+
+            // Helper function to draw or update the geofence marker and circle
+            function updateGeofenceVisuals(latlng) {
+                const radius = parseFloat(radiusSelect.value);
+
+                if (startGeofenceMarker) {
+                    // Update existing marker and circle positions
+                    startGeofenceMarker.setLatLng(latlng);
+                    startGeofenceCircle.setLatLng(latlng);
+                    startGeofenceCircle.setRadius(radius);
+                } else {
+                    // WHAT: Create a fully draggable Leaflet Marker!
+                    // WHY: Allows the user to click once to place it, then drag it around to refine!
+                    startGeofenceMarker = L.marker(latlng, {
+                        draggable: true,
+                        icon: L.divIcon({
+                            html: '🎯',
+                            className: 'target-start-emoji',
+                            iconSize: [24, 24]
+                        })
+                    }).addTo(map).bindPopup("<b>🎯 Dynamic Geofence Center</b><br>Drag me to refine location!");
+
+                    // Draw the green geofenced active boundary circle
+                    startGeofenceCircle = L.circle(latlng, {
+                        radius: radius,
+                        color: '#10b981',
+                        fillColor: '#10b981',
+                        fillOpacity: 0.15,
+                        dashArray: '4, 6'
+                    }).addTo(map);
+
+                    // Listen for DRAG events on the target marker pin
+                    startGeofenceMarker.on('drag', function(e) {
+                        const position = startGeofenceMarker.getLatLng();
+                        
+                        // Dynamically update text inputs as the user drags
+                        latInput.value = position.lat.toFixed(5);
+                        lonInput.value = position.lng.toFixed(5);
+                        
+                        // Move the circle boundary along with the marker
+                        startGeofenceCircle.setLatLng(position);
+                    });
+                }
+
+                // Update HUD input text values
+                latInput.value = latlng.lat.toFixed(5);
+                lonInput.value = latlng.lng.toFixed(5);
+            }
+
             // Load initial flight parameters from server database on startup
             fetch('/api/flight/config')
                 .then(r => r.json())
                 .then(cfg => {
                     modelSelect.value = cfg.active_model;
-                    latInput.value = cfg.start_lat;
-                    lonInput.value = cfg.start_lng;
                     radiusSelect.value = cfg.start_radius_meters;
+                    
+                    if (cfg.start_lat !== 0.0 && cfg.start_lng !== 0.0) {
+                        const savedLatLng = L.latLng(cfg.start_lat, cfg.start_lng);
+                        updateGeofenceVisuals(savedLatLng);
+                    }
                 }).catch(() => {});
 
-            // Leaflet map Double-Click listener to dynamically assign start location
-            map.on('dblclick', function(e) {
-                const lat = e.latlng.lat;
-                const lng = e.latlng.lng;
-                
-                // Update input values
-                latInput.value = lat.toFixed(5);
-                lonInput.value = lng.toFixed(5);
-                
-                // Draw/update starting geofence marker & circle on the map
-                if (startGeofenceMarker) {
-                    startGeofenceMarker.setLatLng(e.latlng);
-                    startGeofenceCircle.setLatLng(e.latlng);
-                } else {
-                    startGeofenceMarker = L.marker(e.latlng, {
-                        icon: L.divIcon({
-                            html: '🎯',
-                            className: 'target-start-emoji',
-                            iconSize: [20, 20]
-                        })
-                    }).addTo(map).bindPopup("<b>Dynamic Detection Start Point</b>");
-                    
+            // WHAT: Leaflet standard Single-Click listener
+            // WHY: Single clicking anywhere on the map instantly re-centers the geofence starting boundary!
+            map.on('click', function(e) {
+                // Ignore clicks if clicking on a marker/popup or HUD panel itself
+                if (e.originalEvent.target.closest('.map-hud, .leaflet-marker-icon')) {
+                    return;
+                }
+                updateGeofenceVisuals(e.latlng);
+            });
+
+            // WHAT: Select dropdown event listener
+            // WHY: Dynamically updates the geofence boundary circle radius on the fly!
+            radiusSelect.addEventListener('change', function() {
+                if (startGeofenceCircle) {
                     const radius = parseFloat(radiusSelect.value);
-                    startGeofenceCircle = L.circle(e.latlng, {
-                        radius: radius,
-                        color: '#10b981',
-                        fillColor: '#10b981',
-                        fillOpacity: 0.15,
-                        dashArray: '3, 5'
-                    }).addTo(map);
+                    startGeofenceCircle.setRadius(radius);
                 }
             });
+
 
             // Post updated settings to VPS
             btnSave.addEventListener('click', function(e) {

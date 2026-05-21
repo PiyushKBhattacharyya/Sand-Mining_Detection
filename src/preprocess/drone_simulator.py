@@ -95,6 +95,84 @@ class DroneSimulator:
                 
         logger.info(f"Generated {len(self.flight_points)} high-resolution flight points.")
 
+    def generate_dynamic_test_path(self, target_lat: float, target_lon: float, start_radius_meters: float = 500.0):
+        """
+        WHAT: Overwrites the static flight path centerline coordinates with a dynamic 
+        launch-to-target flight trajectory.
+        WHY: Allows the operator to test:
+          1. TAKE-OFF phase from a random location miles away (AI detection bypassed, passive telemetry streaming).
+          2. TRANSIT phase flying directly towards target (AI remains passive, saving drone battery).
+          3. ARRIVAL phase crossing into the start_radius geofence (AI triggers immediately, beginning active YOLO detections!).
+        """
+        # If no custom geofence start coordinate has been sent from the VPS yet, do nothing
+        if target_lat == 0.0 or target_lon == 0.0:
+            logger.info("⚠️ Geofence start coordinates are 0.0 (unconfigured). Continuing on standard path.")
+            return
+
+        logger.info(f"🛰️ Dynamically generating launch-to-target path towards geofence: {target_lat}, {target_lon}")
+
+        # 1. GENERATE RANDOM TAKE-OFF LOCATION (approx 4-6 kilometers away from target)
+        random.seed(int(time.time()))
+        angle = random.uniform(0, 2 * math.pi)
+        distance_km = random.uniform(4.0, 6.0) # Takeoff home base is 4-6km away!
+        
+        # 1 deg latitude = 111,320 meters
+        offset_lat = (distance_km * 1000.0 * math.sin(angle)) / 111320.0
+        offset_lon = (distance_km * 1000.0 * math.cos(angle)) / (111320.0 * math.cos(math.radians(target_lat)))
+        
+        start_lat = target_lat + offset_lat
+        start_lon = target_lon + offset_lon
+
+        # Initialize new dynamic trajectory points
+        new_flight_points = []
+
+        # 2. TRANSIT PHASE: Interpolate from random Takeoff point to the Geofence Boundary
+        # Speed: ~42 km/h (~11.6 m/s) at 3 FPS = 3.8 meters per simulation step
+        step_distance_meters = (self.speed_mps / 3.0) 
+        
+        # Let's run a linear interpolation path towards the target coordinate.
+        # We generate 100 high-resolution step points along this transit path.
+        transit_steps = 100
+        for step in range(transit_steps):
+            t = step / transit_steps
+            curr_lat = start_lat + (target_lat - start_lat) * t
+            curr_lon = start_lon + (target_lon - start_lon) * t
+            
+            # Simple bearing/heading from start to target
+            dy = (target_lat - start_lat) * 111320.0
+            dx = (target_lon - start_lon) * 111320.0 * math.cos(math.radians(target_lat))
+            heading = (90.0 - math.degrees(math.atan2(dy, dx))) % 360.0
+
+            new_flight_points.append({
+                'lat': curr_lat,
+                'lon': curr_lon,
+                'heading': heading
+            })
+
+        # 3. ARRIVAL & ORBIT PHASE: Once at target, simulate an active search orbit inside geofence!
+        # Drone flies in a circle of 200m radius around the target to scan for illegal sand mining trucks!
+        orbit_steps = 60
+        orbit_radius_meters = 200.0
+        for step in range(orbit_steps):
+            theta = (step / orbit_steps) * 2 * math.pi
+            
+            orbit_lat = target_lat + (orbit_radius_meters * math.sin(theta)) / 111320.0
+            orbit_lon = target_lon + (orbit_radius_meters * math.cos(theta)) / (111320.0 * math.cos(math.radians(target_lat)))
+            
+            # Heading is tangent to the circle
+            heading = (math.degrees(theta) + 90.0) % 360.0
+
+            new_flight_points.append({
+                'lat': orbit_lat,
+                'lon': orbit_lon,
+                'heading': heading
+            })
+
+        # Overwrite the flight points!
+        self.flight_points = new_flight_points
+        logger.info(f"✅ Dynamic launch-to-target path successfully generated! Steps: {len(self.flight_points)}")
+
+
     def run_simulation(self, duration_seconds=120, frequency_hz=5):
         """Runs the telemetry loop, logging database coordinates at the specified frequency."""
         conn = self.db_manager.get_connection()

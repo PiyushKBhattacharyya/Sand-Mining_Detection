@@ -61,15 +61,20 @@ class EdgePipeline:
             sync_interval_s=5.0
         )
 
-        # ── DYNAMIC MISSION CONTROL PARAMETERS ──
+        # ── WHAT: NEW ACTIVE PARAMETERS FOR PRODUCT LEVEL DEPLOYMENT ──────
+        # ── WHY: Tracks dynamically loaded models and geofence states.
         self.yolo_model = None
         self.active_model_name = None
         
+        # Dynamic Geofence starting coordinates - default to 0.0 (idle geofence)
         self.target_model = "yolov8n.pt"
         self.start_lat = 0.0
         self.start_lon = 0.0
         self.start_radius = 500.0
         self.detection_enabled = False
+        
+        # Track if we have already generated our dynamic test path for takeoff simulation
+        self.dynamic_path_generated = False
 
     def load_yolo_model(self, model_name: str):
         """Dynamically loads/swaps the active YOLO model weights mid-flight."""
@@ -308,6 +313,20 @@ class EdgePipeline:
                             self.start_lon         = cfg.get("start_lng", self.start_lon)
                             self.start_radius      = cfg.get("start_radius_meters", self.start_radius)
                             self.detection_enabled = cfg.get("detection_enabled", self.detection_enabled)
+                            
+                            # ── DYNAMIC TEST PATH TRIGGER ──
+                            # WHAT: If a start geofence coordinate is received and we haven't generated our 
+                            # launch-to-target path yet, generate it now!
+                            # WHY: Triggers takeoff simulation from random starting coordinates.
+                            if self.start_lat != 0.0 and self.start_lon != 0.0 and not self.dynamic_path_generated:
+                                self.drone_sim.generate_dynamic_test_path(
+                                    target_lat=self.start_lat,
+                                    target_lon=self.start_lon,
+                                    start_radius_meters=self.start_radius
+                                )
+                                self.dynamic_path_generated = True
+                                # Reset loop step index to start dynamic flight from Takeoff home base!
+                                step = 0
                     except Exception:
                         pass # Fallback to current settings if VPS link is down
 
