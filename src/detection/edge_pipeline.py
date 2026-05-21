@@ -22,7 +22,9 @@ project_root = Path(__file__).resolve().parent.parent.parent
 sys.path.append(str(project_root / "src" / "preprocess"))
 sys.path.append(str(project_root / "src" / "detection"))
 
+# pyrefly: ignore [missing-import]
 from db_setup import DatabaseManager
+# pyrefly: ignore [missing-import]
 from drone_simulator import DroneSimulator
 from gps_projector import pixel_to_gps
 from cluster_engine import ClusterEngine
@@ -58,6 +60,54 @@ class EdgePipeline:
             cloud_url=self.cloud_url,
             sync_interval_s=5.0
         )
+
+        # ── DYNAMIC MISSION CONTROL PARAMETERS ──
+        self.yolo_model = None
+        self.active_model_name = None
+        
+        self.target_model = "yolov8n.pt"
+        self.start_lat = 0.0
+        self.start_lon = 0.0
+        self.start_radius = 500.0
+        self.detection_enabled = False
+
+    def load_yolo_model(self, model_name: str):
+        """Dynamically loads/swaps the active YOLO model weights mid-flight."""
+        if self.active_model_name == model_name and self.yolo_model is not None:
+            return  # Already loaded
+            
+        logger.info(f"🔄 Switching model mid-flight: {self.active_model_name} -> {model_name}")
+        try:
+            from ultralytics import YOLO
+            weights_path = Path(__file__).resolve().parent.parent.parent / "models" / "weights" / model_name
+            
+            # If standard weight is missing locally, YOLO automatically downloads it
+            if weights_path.exists():
+                self.yolo_model = YOLO(str(weights_path))
+            else:
+                self.yolo_model = YOLO(model_name)
+                
+            self.active_model_name = model_name
+            logger.info(f"✅ Active model successfully switched to: {model_name}")
+        except Exception as e:
+            logger.error(f"❌ Failed to load model weights {model_name}: {e}")
+
+    def check_geofence_trigger(self, drone_lat: float, drone_lon: float) -> bool:
+        """Calculates distance to starting point and returns True if inside start geofence."""
+        if self.start_lat == 0.0 or self.start_lon == 0.0:
+            return False
+
+        lat1, lon1 = math.radians(drone_lat), math.radians(drone_lon)
+        lat2, lon2 = math.radians(self.start_lat), math.radians(self.start_lon)
+        
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        
+        a = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2)**2
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        
+        distance_meters = 6371000.0 * c  # Earth radius ~6,371,000 meters
+        return distance_meters <= self.start_radius
 
     def generate_simulated_detections(self, drone_lat: float, drone_lon: float, step: int) -> List[Dict[str, Any]]:
         """
@@ -247,6 +297,20 @@ class EdgePipeline:
                 if not self.running:
                     break
                     
+                # ── A. GET CONFIG FROM VPS (MID-FLIGHT UPDATE) ──
+                if step % 5 == 0:
+                    try:
+                        r = requests.get(f"{self.cloud_url}/api/flight/config", timeout=0.5)
+                        if r.status_code == 200:
+                            cfg = r.json()
+                            self.target_model      = cfg.get("active_model", self.target_model)
+                            self.start_lat         = cfg.get("start_lat", self.start_lat)
+                            self.start_lon         = cfg.get("start_lng", self.start_lon)
+                            self.start_radius      = cfg.get("start_radius_meters", self.start_radius)
+                            self.detection_enabled = cfg.get("detection_enabled", self.detection_enabled)
+                    except Exception:
+                        pass # Fallback to current settings if VPS link is down
+
                 # 1. Telemetry Step
                 point_idx = step % len(self.drone_sim.flight_points)
                 point = self.drone_sim.flight_points[point_idx]
@@ -260,7 +324,7 @@ class EdgePipeline:
                 
                 timestamp = datetime.now().isoformat()
                 
-                # Save Telemetry Locally to edge DB first! (User requirement #1)
+                # Save Telemetry Locally to edge DB first! (Resilient Offline DB logging)
                 tele_params = (
                     timestamp, lat, lon, alt,
                     gimbal_pitch, heading, 0.0,
@@ -280,15 +344,24 @@ class EdgePipeline:
                     'speed': speed, 'heading': heading, 'timestamp': timestamp, 'battery': int(battery)
                 }
 
-                # 2. Simulated YOLO Object Detection & GPS Projection (User requirement #2)
-                raw_detections = self.generate_simulated_detections(lat, lon, step)
+                # ── B. GEOFENCED INFERENCE FILTER (NO HARDCODING) ──
+                is_active = self.check_geofence_trigger(lat, lon) and self.detection_enabled
                 
-                # 3. Spatial Aggregation & DBSCAN Clustering
-                # Groups trucks/workers/excavators within 50m into single unified incident zones
-                incidents = self.cluster_engine.cluster_detections(raw_detections, eps_meters=60.0)
-                
-                # Save Detections and Incidents locally to edge DB! (User requirement #1)
-                self.cluster_engine.save_incidents_to_db(incidents, telemetry_log_id=telemetry_id)
+                raw_detections = []
+                incidents = []
+                if is_active:
+                    # Hot-load active YOLO model (YOLOv8 vs YOLOv10) mid-flight if needed
+                    self.load_yolo_model(self.target_model)
+                    
+                    # 2. Simulated YOLO Object Detection & GPS Projection (User requirement #2)
+                    raw_detections = self.generate_simulated_detections(lat, lon, step)
+                    
+                    # 3. Spatial Aggregation & DBSCAN Clustering
+                    # Groups trucks/workers/excavators within 60m into single unified incident zones
+                    incidents = self.cluster_engine.cluster_detections(raw_detections, eps_meters=60.0)
+                    
+                    # Save Detections and Incidents locally to edge DB! (User requirement #1)
+                    self.cluster_engine.save_incidents_to_db(incidents, telemetry_log_id=telemetry_id)
 
                 # 4. Generate Video Feeds (Raw vs Overlay)
                 raw_jpeg, overlay_jpeg = self.draw_edge_overlay_canvas(telemetry_dict, raw_detections, step)

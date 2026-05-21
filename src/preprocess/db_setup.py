@@ -66,6 +66,9 @@ class DatabaseManager:
         t_timestamptz = "TIMESTAMPTZ" if is_pg else "TEXT"
         t_double = "DOUBLE PRECISION" if is_pg else "REAL"
         t_boolean = "BOOLEAN" if is_pg else "INTEGER"
+        # Postgress uses 'BYTEA' for raw binary bite, while sqlite uses 'BLOB 
+        # This keeps our database schema cross-compatible between local testing and VPS deployment!
+        t_blob = "BYTEA" if is_pg else "BLOB"
         now_default = "NOW()" if is_pg else "NOW()"  # Handled on DB-level, but in SQLite we can use DEFAULT CURRENT_TIMESTAMP
         if not is_pg:
             now_default = "CURRENT_TIMESTAMP"
@@ -98,6 +101,9 @@ class DatabaseManager:
             illegal_zone {t_boolean} NOT NULL DEFAULT 1,
             distance_to_river_m {t_double},
             evidence_image_path VARCHAR(255),
+            -- WHAT: New column to store raw binary image bytes directly inside PostgreSQL/SQLite.
+            -- WHY: Extracted Jetson snapshots are saved inside the database itself on the VPS!
+            evidence_image_blob {t_blob},
             synced_to_cloud {t_boolean} NOT NULL DEFAULT 0
         );
         """

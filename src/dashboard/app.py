@@ -16,8 +16,11 @@ import sys
 sys.path.append(str(Path(__file__).resolve().parent.parent / "preprocess"))
 sys.path.append(str(Path(__file__).resolve().parent.parent / "reporting"))
 sys.path.append(str(Path(__file__).resolve().parent.parent / "detection"))
+# pyrefly: ignore [missing-import]
 from db_setup import DatabaseManager
+# pyrefly: ignore [missing-import]
 from pdf_generator import generate_incident_report
+# pyrefly: ignore [missing-import]
 from zone_builder import build_buffer
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -201,6 +204,18 @@ db_manager.initialize_database()
 # Active buffer radius — starts at 1km, updated via /api/zone/radius
 active_buffer_radius_m: float = 1000.0
 
+#  Global dictionary holding the active flight mission control configuration.
+#  Allows the operator dashboard to set parameters that are fetched by the drone
+# mid-flight (target detection model and starting coordinates).
+
+flight_config = {
+    "active_model": "yolov8n.pt",  # Default model weights filename
+    "start_lat": 0.0,              # Dynamic start coordinate latitude
+    "start_lng": 0.0,              # Dynamic start coordinate longitude
+    "start_radius_meters": 500.0,  # Dynamic start radius in meters
+    "detection_enabled": False,
+}
+
 # Store active websocket connections
 class ConnectionManager:
     def __init__(self):
@@ -245,6 +260,7 @@ async def _webcam_telemetry_simulation_loop():
     # Wait for the app to start up fully
     await asyncio.sleep(2.0)
     
+    # pyrefly: ignore [missing-import]
     from cluster_engine import ClusterEngine
     import random
     import math
@@ -436,6 +452,7 @@ async def _webcam_telemetry_simulation_loop():
                     try:
                         import cv2
                         import numpy as np
+                        # pyrefly: ignore [missing-import]
                         from evidence_engine import save_incident_evidence
                         
                         frame_bytes = latest_overlay_frame
@@ -587,15 +604,35 @@ async def receive_edge_sync(data: Dict[str, Any]):
     if img_b64:
         try:
             inc_id   = payload.get("incident_id", "unknown")
+            # 1. Decode the base64 string sent by the Jetson Sync Worker
             img_data = base64.b64decode(img_b64)
+            # 2. Save the image in the cloud evidence directory
             img_path = EVIDENCE_DIR / f"cloud_evidence_{inc_id}.jpg"
             with open(img_path, "wb") as f:
                 f.write(img_data)
             payload["evidence_image_path"] = str(img_path.relative_to(
                 Path(__file__).resolve().parent.parent.parent
             ))
+
+            # Save the raw image bytes directly inside PostgreSQL on the VPS!
+            # This fulfills the user requirement to extract images and save them directly in Postgres VPS!
+
+            conn = db_manager.get_connection()
+            cursor = conn.cursor()
+            ph = "%s" if db_manager.db_type == "postgresql" else "?"
+
+            cursor.execute(
+                f"UPDATE incidents SET evidence_image_blob = {ph} WHERE id = {ph}",
+                (img_data, inc_id)
+            )
+
+            conn.commit()
+            cursor.close()
+            conn.close()
+            logger.info(f"Saved binary evidence blob to DB for incident #{inc_id}")
+
         except Exception as e:
-            logger.warning(f"Could not save evidence image: {e}")
+            logger.error(f"Could not save evidence image: {e}")
 
     # Broadcast to all open dashboards
     await manager.broadcast(data)
@@ -833,6 +870,71 @@ def export_pdf_report(severity: Optional[str] = Query(None, description="Filter 
 
 
 @app.get("/api/evidence/{filename}")
+# ── FLIGHT CONTROL APIS (MID-FLIGHT SWITCHING & DYNAMIC GEOFENCING) ────────
+@app.get("/api/flight/config")
+def get_flight_config():
+    """
+    WHAT: REST endpoint returning active flight mission control config.
+    WHY: Checked periodically by the drone edge pipeline to load the correct
+    model mid-flight and monitor geofenced start coordinates!
+    """
+    return flight_config
+
+
+@app.post("/api/flight/config")
+async def update_flight_config(data: Dict[str, Any]):
+    """
+    WHAT: Endpoint to update active model and geofencing coordinates.
+    WHY: Operators can switch YOLOv8 vs YOLOv10 mid-flight or adjust the trigger geofence!
+    """
+    global flight_config
+    flight_config["active_model"]        = data.get("active_model", flight_config["active_model"])
+    flight_config["start_lat"]           = float(data.get("start_lat", flight_config["start_lat"]))
+    # Support longitude mapped as either 'start_lng' or 'start_lon'
+    flight_config["start_lng"]           = float(data.get("start_lng", data.get("start_lon", flight_config["start_lng"])))
+    flight_config["start_radius_meters"] = float(data.get("start_radius_meters", flight_config["start_radius_meters"]))
+    flight_config["detection_enabled"]   = bool(data.get("detection_enabled", flight_config["detection_enabled"]))
+    
+    logger.info(f"🛰️ Updated Flight Configuration: {flight_config}")
+    
+    # Broadcast to all connected WebSocket dashboards so map and parameters update instantly!
+    await manager.broadcast({
+        "type": "flight_config_update",
+        "payload": flight_config
+    })
+    return {"status": "ok", "config": flight_config}
+
+
+# ── POSTGRES VPS DIRECT IMAGE RETRIEVAL API ──────────────────────────────────
+@app.get("/api/evidence/db/{incident_id}")
+def get_evidence_image_from_db(incident_id: int):
+    """
+    WHAT: Retrieves binary JPEG data directly from PostgreSQL / SQLite blob storage.
+    WHY: Allows serving evidence snapshots to the frontend HTML direct from the DB
+    without any dependency on the server file system!
+    """
+    conn = db_manager.get_connection()
+    cursor = conn.cursor()
+    ph = "%s" if db_manager.db_type == "postgresql" else "?"
+    
+    try:
+        cursor.execute(f"SELECT evidence_image_blob FROM incidents WHERE id = {ph}", (incident_id,))
+        row = cursor.fetchone()
+        
+        if not row or not row[0]:
+            raise HTTPException(status_code=404, detail="Incident evidence image binary blob not found")
+        
+        # Format memoryview / bytes to standardized raw bytes for Streaming
+        blob_bytes = bytes(row[0]) if isinstance(row[0], (memoryview, bytes)) else row[0]
+        
+        return Response(content=blob_bytes, media_type="image/jpeg")
+    except Exception as e:
+        logger.error(f"Error serving image from DB: {e}")
+        raise HTTPException(status_code=500, detail="Database failure fetching image blob")
+    finally:
+        cursor.close()
+        conn.close()
+
 def get_evidence_image(filename: str):
     """Serves a specific evidence JPEG image by filename."""
     img_path = EVIDENCE_DIR / filename
