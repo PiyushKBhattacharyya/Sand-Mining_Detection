@@ -731,36 +731,61 @@
 
                 <!-- Right: Map -->
                 <div class="card" style="position:relative; display:flex; flex-direction:column;">
-                    <!-- Map HUD -->
-                    <div id="map-hud" class="map-hud">
-                        <h4>Map View</h4>
+                                        <!-- Map HUD (With Dynamic Command Center) -->
+                    <div id="map-hud" class="map-hud" style="width: 250px;">
+                        <h4>Tactical Command HUD</h4>
                         <div style="font-size:11px; color:#4ade80; font-weight:600;">
-                            <span class="status-dot"></span> Live Tracking
+                            <span class="status-dot"></span> Live Telemetry Connected
                         </div>
-                        <div class="divider"></div>
+                        <div class="divider" style="margin: 6px 0;"></div>
+                        
                         <div class="info-row">
-                            <span>Active Zone:</span>
-                            <span class="val" id="active-zone-label" style="color:#f87171;">1.0 km Buffer</span>
+                            <span>Active Buffer:</span>
+                            <span class="val" id="active-zone-label" style="color:#f87171;">1.0 km</span>
                         </div>
-                        <div class="info-row">
-                            <span>Detections:</span>
-                            <span class="val" id="visible-markers-count">0</span>
+                        <input id="buffer-slider" type="range" min="250" max="3000" step="250" value="1000">
+                        
+                        <div class="divider" style="margin: 8px 0;"></div>
+                        
+                        <!-- ── DYNAMIC MID-FLIGHT MODEL SWITCHER ── -->
+                        <h4 style="font-size: 11px; margin-bottom: 4px; color: #60a5fa;">Mid-Flight AI Model:</h4>
+                        <select id="model-select" style="width:100%; padding: 4px; font-size:11px; background:#111827; border:1px solid #374151; color:#fff; border-radius:4px; outline:none; margin-bottom: 6px;">
+                            <option value="yolov8n.pt">YOLOv8 Nano (Fastest)</option>
+                            <option value="yolov8m.pt">YOLOv8 Medium (Accurate)</option>
+                            <option value="yolov10n.pt">YOLOv10 Nano (Optimal)</option>
+                            <option value="custom_river_model.pt">Custom Fine-Tuned Model</option>
+                        </select>
+                        
+                        <!-- ── DYNAMIC GEOFENCE START TRIGGER CONTROLS ── -->
+                        <h4 style="font-size: 11px; margin-bottom: 4px; color: #34d399;">Detection Start Geofence:</h4>
+                        <div style="display:flex; flex-direction:column; gap:4px; margin-bottom:6px;">
+                            <div class="info-row">
+                                <span>Start Lat:</span>
+                                <input type="number" id="geofence-lat" value="0.0" step="0.0001" style="width:100px; padding:2px; font-size:10px; background:#111827; border:1px solid #374151; color:#fff; text-align:center; border-radius:3px;">
+                            </div>
+                            <div class="info-row">
+                                <span>Start Lon:</span>
+                                <input type="number" id="geofence-lon" value="0.0" step="0.0001" style="width:100px; padding:2px; font-size:10px; background:#111827; border:1px solid #374151; color:#fff; text-align:center; border-radius:3px;">
+                            </div>
+                            <div class="info-row">
+                                <span>Start Radius:</span>
+                                <select id="geofence-radius" style="width:100px; padding:2px; font-size:10px; background:#111827; border:1px solid #374151; color:#fff; border-radius:3px; outline:none;">
+                                    <option value="250">250m</option>
+                                    <option value="500" selected>500m</option>
+                                    <option value="1000">1000m</option>
+                                    <option value="2000">2000m</option>
+                                </select>
+                            </div>
                         </div>
-                        <div class="divider"></div>
-                        <div class="info-row">
-                            <span>Buffer Radius</span>
-                            <span class="val" id="buffer-km-label" style="color:#60a5fa;">1.0 km</span>
+                        <div style="font-size: 9px; color: #9ca3af; margin-bottom: 6px; font-style: italic;">
+                            💡 Tip: Double-click anywhere on the map to set the geofence start coordinates!
                         </div>
-                        <input id="buffer-slider" type="range" min="250" max="3000" step="250" value="1000"
-                            style="margin-top:4px;">
-                        <div class="preset-row">
-                            <button data-km="500" class="buf-preset preset-btn">0.5km</button>
-                            <button data-km="1000" class="buf-preset preset-btn active">1km</button>
-                            <button data-km="1500" class="buf-preset preset-btn">1.5km</button>
-                            <button data-km="2000" class="buf-preset preset-btn">2km</button>
-                            <button data-km="3000" class="buf-preset preset-btn">3km</button>
+                        
+                        <div style="display:flex; gap:4px; margin-top:8px;">
+                            <button id="btn-save-flight-cfg" class="btn btn-primary" style="width:100%; justify-content:center; padding:4px 8px; font-size:10px;">Apply Flight Parameters</button>
                         </div>
                     </div>
+
 
                     <!-- Map container -->
                     <div id="map"
@@ -1380,14 +1405,13 @@
 
             const imgContainer = document.getElementById('ev-image-container');
             const imgEl = document.getElementById('ev-image');
-            if (inc.evidence_image_path) {
-                const fname = inc.evidence_image_path.split(/[\\/]/).pop();
-                imgEl.src = `/api/evidence/${fname}`;
-                imgEl.onerror = () => { imgContainer.classList.add('hidden'); };
-                imgContainer.classList.remove('hidden');
-            } else {
-                imgContainer.classList.add('hidden');
-            }
+            
+            // WHAT: Query the new PostgreSQL database binary endpoint!
+            // WHY: Pulls the JPEG directly out of PostgreSQL without depending on VPS files!
+            imgEl.src = `/api/evidence/db/${inc.id}`;
+            imgEl.onerror = () => { imgContainer.classList.add('hidden'); };
+            imgContainer.classList.remove('hidden');
+
 
             fetch(`/api/detections?incident_id=${inc.id}`)
                 .then(res => res.json())
@@ -1450,6 +1474,88 @@
             link.click();
             document.body.removeChild(link);
         });
+
+                // ── FLIGHT COMMAND SYSTEM HANDLERS (MAP INTERACTION & UPDATE) ──
+        (function setupFlightConfigHandlers() {
+            const btnSave = document.getElementById('btn-save-flight-cfg');
+            const modelSelect = document.getElementById('model-select');
+            const latInput = document.getElementById('geofence-lat');
+            const lonInput = document.getElementById('geofence-lon');
+            const radiusSelect = document.getElementById('geofence-radius');
+
+            let startGeofenceMarker = null;
+            let startGeofenceCircle = null;
+
+            // Load initial flight parameters from server database on startup
+            fetch('/api/flight/config')
+                .then(r => r.json())
+                .then(cfg => {
+                    modelSelect.value = cfg.active_model;
+                    latInput.value = cfg.start_lat;
+                    lonInput.value = cfg.start_lng;
+                    radiusSelect.value = cfg.start_radius_meters;
+                }).catch(() => {});
+
+            // Leaflet map Double-Click listener to dynamically assign start location
+            map.on('dblclick', function(e) {
+                const lat = e.latlng.lat;
+                const lng = e.latlng.lng;
+                
+                // Update input values
+                latInput.value = lat.toFixed(5);
+                lonInput.value = lng.toFixed(5);
+                
+                // Draw/update starting geofence marker & circle on the map
+                if (startGeofenceMarker) {
+                    startGeofenceMarker.setLatLng(e.latlng);
+                    startGeofenceCircle.setLatLng(e.latlng);
+                } else {
+                    startGeofenceMarker = L.marker(e.latlng, {
+                        icon: L.divIcon({
+                            html: '🎯',
+                            className: 'target-start-emoji',
+                            iconSize: [20, 20]
+                        })
+                    }).addTo(map).bindPopup("<b>Dynamic Detection Start Point</b>");
+                    
+                    const radius = parseFloat(radiusSelect.value);
+                    startGeofenceCircle = L.circle(e.latlng, {
+                        radius: radius,
+                        color: '#10b981',
+                        fillColor: '#10b981',
+                        fillOpacity: 0.15,
+                        dashArray: '3, 5'
+                    }).addTo(map);
+                }
+            });
+
+            // Post updated settings to VPS
+            btnSave.addEventListener('click', function(e) {
+                e.stopPropagation();
+                
+                const payload = {
+                    active_model: modelSelect.value,
+                    start_lat: parseFloat(latInput.value),
+                    start_lng: parseFloat(lonInput.value),
+                    start_radius_meters: parseFloat(radiusSelect.value),
+                    detection_enabled: true
+                };
+
+                fetch('/api/flight/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                })
+                .then(r => r.json())
+                .then(res => {
+                    alert(`🛰️ Flight Configuration Updated!\nActive Model: ${res.config.active_model}\nGeofenced Start Coordinates: ${res.config.start_lat}, ${res.config.start_lng}`);
+                })
+                .catch(err => {
+                    console.error('Failed to sync flight configuration:', err);
+                    alert('❌ Failed to update flight parameters.');
+                });
+            });
+        })();
 
         // Initialize
         connectWebSocket();
