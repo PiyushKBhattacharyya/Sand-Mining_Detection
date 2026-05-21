@@ -133,6 +133,24 @@ class DatabaseManager:
         cursor.execute(incidents_table)
         cursor.execute(detections_table)
 
+        # ── DYNAMIC COLUMN SCHEMA MIGRATIONS ──────────────────────────────
+        # WHAT: Dynamically append columns if database was pre-created before update.
+        # WHY: Ensures existing databases don't break with missing column exceptions.
+        if self.db_type == "sqlite":
+            cursor.execute("PRAGMA table_info(incidents);")
+            columns = [col[1] for col in cursor.fetchall()]
+            if "evidence_image_blob" not in columns:
+                logger.info("🔧 Migrating local SQLite: adding evidence_image_blob column to incidents table...")
+                cursor.execute("ALTER TABLE incidents ADD COLUMN evidence_image_blob BLOB;")
+                conn.commit()
+        else:
+            try:
+                cursor.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS evidence_image_blob BYTEA;")
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                logger.debug(f"Postgres migration check: {e}")
+
         # 4. Create indexes for high-performance class filtering & real-time map spatial rendering
         indexes = [
             "CREATE INDEX IF NOT EXISTS idx_telemetry_time ON telemetry_logs (timestamp);",

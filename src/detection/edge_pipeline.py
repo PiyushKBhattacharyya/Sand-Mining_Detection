@@ -75,6 +75,7 @@ class EdgePipeline:
         
         # Track if we have already generated our dynamic test path for takeoff simulation
         self.dynamic_path_generated = False
+        self.current_flight_idx = 0
 
     def load_yolo_model(self, model_name: str):
         """Dynamically loads/swaps the active YOLO model weights mid-flight."""
@@ -325,13 +326,13 @@ class EdgePipeline:
                                     start_radius_meters=self.start_radius
                                 )
                                 self.dynamic_path_generated = True
-                                # Reset loop step index to start dynamic flight from Takeoff home base!
-                                step = 0
+                                # Reset loop index to start dynamic flight from Takeoff home base!
+                                self.current_flight_idx = 0
                     except Exception:
                         pass # Fallback to current settings if VPS link is down
 
                 # 1. Telemetry Step
-                point_idx = step % len(self.drone_sim.flight_points)
+                point_idx = self.current_flight_idx % len(self.drone_sim.flight_points)
                 point = self.drone_sim.flight_points[point_idx]
                 
                 lat, lon = point['lat'], point['lon']
@@ -473,6 +474,7 @@ class EdgePipeline:
                 if step % 20 == 0:
                     logger.info(f"Jetson Nano Status - Frame: {step} | Battery: {int(battery)}% | Detections in frame: {len(raw_detections)}")
 
+                self.current_flight_idx += 1
                 time.sleep(0.3)  # Loop at approx 3 FPS for simulation visual clarity
                 
         except KeyboardInterrupt:

@@ -144,11 +144,56 @@ def _video_capture_loop():
         # Raw feed: clean, unprocessed frame from the camera
         latest_raw_frame = jpeg
 
+        # Calculate distance to see if drone has reached the Detection Starting Spot
+        def is_at_starting_spot() -> bool:
+            global has_reached_starting_spot
+
+            target_lat = flight_config.get("start_lat", 0.0)
+            target_lng = flight_config.get("start_lng", 0.0)
+            radius = flight_config.get("start_radius_meters", 500.0)
+            enabled = flight_config.get("detection_enabled", False)
+
+            if not enabled or target_lat == 0.0 or target_lng == 0.0:
+                return False
+
+            drone_lat = latest_drone_coords.get("lat", 0.0)
+            drone_lon = latest_drone_coords.get("lon", 0.0)
+            if drone_lat == 0.0 or drone_lon == 0.0:
+                return False
+
+            import math
+            lat1, lon1 = math.radians(drone_lat), math.radians(drone_lon)
+            lat2, lon2 = math.radians(target_lat), math.radians(target_lng)
+            
+            dlat = lat2 - lat1
+            dlon = lon2 - lon1
+            
+            a = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2)**2
+            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+            
+            distance_meters = 6371000.0 * c
+            if distance_meters <= radius:
+                if not has_reached_starting_spot:
+                    logger.info("🎯 Drone has entered the Detection Starting Spot! AI Detection System is now ACTIVE.")
+                    has_reached_starting_spot = True
+
+            return has_reached_starting_spot
+
+        def is_inside_fence() -> bool:
+            global global_cluster_engine
+            if global_cluster_engine is None:
+                return True  # Fallback if engine is initializing
+            drone_lat = latest_drone_coords.get("lat", 0.0)
+            drone_lon = latest_drone_coords.get("lon", 0.0)
+            if drone_lat == 0.0 or drone_lon == 0.0:
+                return False
+            return global_cluster_engine.is_in_illegal_zone(drone_lat, drone_lon)
+
         # ── DETECTION HOOK ────────────────────────────────────────────────
         # Person-only detection (COCO class 0).
         # Replace _yolo_model with your custom model by dropping best.pt
         # into models/weights/ — it auto-loads at startup.
-        if _yolo_model is not None:
+        if _yolo_model is not None and is_at_starting_spot() and is_inside_fence():
             try:
                 results = _yolo_model(
                     frame,
@@ -217,6 +262,7 @@ flight_config = {
 }
 
 latest_drone_coords = {"lat": 0.0, "lon": 0.0}
+has_reached_starting_spot = False
 
 # Store active websocket connections
 class ConnectionManager:
@@ -365,6 +411,11 @@ async def _webcam_telemetry_simulation_loop():
             lon = base_lon + (lateral_offset_meters * point['perp_cos']) / (
                 111320 * math.cos(math.radians(base_lat))
             )
+
+            # Update global latest_drone_coords for local webcam YOLO gating!
+            global latest_drone_coords
+            latest_drone_coords["lat"] = lat
+            latest_drone_coords["lon"] = lon
 
             alt = 70.0 + random.uniform(-1.0, 1.0)
             speed = speed_mps
@@ -877,13 +928,16 @@ async def update_flight_config(data: Dict[str, Any]):
     WHAT: Endpoint to update active model and geofencing coordinates.
     WHY: Operators can switch YOLOv8 vs YOLOv10 mid-flight or adjust the trigger geofence!
     """
-    global flight_config
+    global flight_config, has_reached_starting_spot
     flight_config["active_model"]        = data.get("active_model", flight_config["active_model"])
     flight_config["start_lat"]           = float(data.get("start_lat", flight_config["start_lat"]))
     # Support longitude mapped as either 'start_lng' or 'start_lon'
     flight_config["start_lng"]           = float(data.get("start_lng", data.get("start_lon", flight_config["start_lng"])))
     flight_config["start_radius_meters"] = float(data.get("start_radius_meters", flight_config["start_radius_meters"]))
     flight_config["detection_enabled"]   = bool(data.get("detection_enabled", flight_config["detection_enabled"]))
+    
+    # Reset starting spot trigger when operator updates parameters
+    has_reached_starting_spot = False
     
     logger.info(f"🛰️ Updated Flight Configuration: {flight_config}")
     
@@ -901,25 +955,62 @@ def get_evidence_image_from_db(incident_id: int):
     """
     WHAT: Retrieves binary JPEG data directly from PostgreSQL / SQLite blob storage.
     WHY: Allows serving evidence snapshots to the frontend HTML direct from the DB
-    without any dependency on the server file system!
+    without any dependency on the server file system! Includes seamless local
+    filesystem fallback for offline/local development.
     """
     conn = db_manager.get_connection()
     cursor = conn.cursor()
     ph = "%s" if db_manager.db_type == "postgresql" else "?"
     
     try:
-        cursor.execute(f"SELECT evidence_image_blob FROM incidents WHERE id = {ph}", (incident_id,))
+        # 1. Try reading the blob and filesystem path from database
+        cursor.execute(f"SELECT evidence_image_blob, evidence_image_path FROM incidents WHERE id = {ph}", (incident_id,))
         row = cursor.fetchone()
         
-        if not row or not row[0]:
-            raise HTTPException(status_code=404, detail="Incident evidence image binary blob not found")
-        
-        # Format memoryview / bytes to standardized raw bytes for Streaming
-        blob_bytes = bytes(row[0]) if isinstance(row[0], (memoryview, bytes)) else row[0]
-        
-        return Response(content=blob_bytes, media_type="image/jpeg")
+        if row:
+            blob = row[0]
+            path_str = row[1]
+            
+            # If binary blob exists, serve it immediately (production/VPS mode)
+            if blob:
+                blob_bytes = bytes(blob) if isinstance(blob, (memoryview, bytes)) else blob
+                return Response(content=blob_bytes, media_type="image/jpeg")
+            
+            # Fallback: If blob is empty but path exists in DB, load local file (local development mode)
+            if path_str:
+                project_root = Path(__file__).resolve().parent.parent.parent
+                file_path = project_root / path_str
+                if file_path.exists():
+                    with open(file_path, "rb") as f:
+                        return Response(content=f.read(), media_type="image/jpeg")
+                        
+        # 2. Hard fallback: Search local detections folder directly by incident ID
+        project_root = Path(__file__).resolve().parent.parent.parent
+        detections_dir = project_root / "data" / "detections"
+        # Search for files matching evidence_{incident_id}*.jpg or cloud_evidence_{incident_id}*.jpg
+        matches = list(detections_dir.glob(f"evidence_{incident_id}*.jpg"))
+        if not matches:
+            matches = list(detections_dir.glob(f"cloud_evidence_{incident_id}*.jpg"))
+        if matches:
+            with open(matches[0], "rb") as f:
+                return Response(content=f.read(), media_type="image/jpeg")
+                
+        raise HTTPException(status_code=404, detail="Incident evidence image not found")
     except Exception as e:
         logger.error(f"Error serving image from DB: {e}")
+        # Try search fallback directly in case of schema/SQL failures
+        try:
+            project_root = Path(__file__).resolve().parent.parent.parent
+            detections_dir = project_root / "data" / "detections"
+            matches = list(detections_dir.glob(f"evidence_{incident_id}*.jpg"))
+            if not matches:
+                matches = list(detections_dir.glob(f"cloud_evidence_{incident_id}*.jpg"))
+            if matches:
+                with open(matches[0], "rb") as f:
+                    return Response(content=f.read(), media_type="image/jpeg")
+        except Exception:
+            pass
+            
         raise HTTPException(status_code=500, detail="Database failure fetching image blob")
     finally:
         cursor.close()
