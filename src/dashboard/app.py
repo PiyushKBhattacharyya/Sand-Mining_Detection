@@ -122,8 +122,32 @@ def _video_capture_loop():
     encode_params = [cv2.IMWRITE_JPEG_QUALITY, CAMERA_QUALITY]
     interval = 1.0 / CAMERA_FPS
 
+    # Track the active loaded model for the local server webcam feed
+    custom_weights = Path(__file__).resolve().parent.parent.parent / "models" / "weights" / "best.pt"
+    current_loaded_model_path = str(custom_weights) if custom_weights.exists() else "yolov8n.pt"
+
     while True:
         t0 = time.time()
+
+        # Dynamically hot-swap local YOLO model if operator changed it in the dropdown!
+        target_model_name = flight_config.get("active_model", "yolov8n.pt")
+        if target_model_name == "best.pt":
+            target_path = str(Path(__file__).resolve().parent.parent.parent / "models" / "weights" / "best.pt")
+            if not Path(target_path).exists():
+                target_path = "yolov8n.pt"
+        else:
+            target_path = target_model_name
+
+        if current_loaded_model_path != target_path:
+            logger.info(f"🔄 Swapping local server YOLO model: {current_loaded_model_path} -> {target_path}")
+            try:
+                from ultralytics import YOLO
+                global _yolo_model
+                _yolo_model = YOLO(target_path)
+                current_loaded_model_path = target_path
+                logger.info(f"✅ Local server YOLO model successfully swapped to: {target_model_name}")
+            except Exception as e:
+                logger.error(f"❌ Failed to dynamic swap local YOLO model: {e}")
         ret, frame = cap.read()
 
         if not ret:
