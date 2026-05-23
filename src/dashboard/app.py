@@ -71,6 +71,7 @@ recording_lock = threading.Lock()
 global_video_w = 1280
 global_video_h = 720
 
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -1054,10 +1055,10 @@ async def update_flight_config(request: Request, data: Dict[str, Any]):
         raise HTTPException(status_code=401, detail="Unauthorized")
     global flight_config, has_reached_starting_spot
     
-    old_lat = flight_config.get("start_lat", 0.0)
-    old_lng = flight_config.get("start_lng", 0.0)
-    old_rad = flight_config.get("start_radius_meters", 500.0)
-
+    # Save old coordinates to check if they actually changed
+    old_lat = flight_config["start_lat"]
+    old_lng = flight_config["start_lng"]
+    old_rad = flight_config["start_radius_meters"]
     new_lat = float(data.get("start_lat", flight_config["start_lat"]))
     new_lng = float(data.get("start_lng", data.get("start_lon", flight_config["start_lng"])))
     new_rad = float(data.get("start_radius_meters", flight_config["start_radius_meters"]))

@@ -29,6 +29,7 @@ class DatabaseManager:
             self.project_root / "data" / "raw",
             self.project_root / "data" / "processed",
             self.project_root / "data" / "detections",
+            self.project_root / "data" / "recordings",
             self.project_root / "data" / "legal_zones",
             self.project_root / "data" / "recordings",
             self.project_root / "models" / "weights"
@@ -171,12 +172,14 @@ class DatabaseManager:
                 cursor.execute("ALTER TABLE incidents ADD COLUMN evidence_image_blob BLOB;")
                 conn.commit()
 
-            cursor.execute("PRAGMA table_info(users);")
-            u_columns = [col[1] for col in cursor.fetchall()]
-            if "email" not in u_columns:
-                logger.info(" Migrating local SQLite: adding email column to users table...")
-                cursor.execute("ALTER TABLE users ADD COLUMN email VARCHAR(255);")
-                conn.commit()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users';")
+            if cursor.fetchone():
+                cursor.execute("PRAGMA table_info(users);")
+                u_columns = [col[1] for col in cursor.fetchall()]
+                if "email" not in u_columns:
+                    logger.info(" Migrating local SQLite: adding email column to users table...")
+                    cursor.execute("ALTER TABLE users ADD COLUMN email VARCHAR(255);")
+                    conn.commit()
         else:
             try:
                 cursor.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS evidence_image_blob BYTEA;")
