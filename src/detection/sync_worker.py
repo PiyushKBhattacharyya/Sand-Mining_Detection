@@ -27,8 +27,8 @@ class SyncWorker:
     - Never blocks the edge pipeline (runs in daemon thread)
     """
 
-    def __init__(self, db_manager, cloud_url: str = "http://localhost:8000",
-                 sync_interval_s: float = 5.0):
+    def __init__(self, db_manager, cloud_url = "http://localhost:8000",
+                 sync_interval_s = 5.0):
         self.db_manager     = db_manager
         self.cloud_url      = cloud_url.rstrip("/")
         self.sync_interval  = sync_interval_s
@@ -52,7 +52,7 @@ class SyncWorker:
 
     #  Internal loop 
 
-    def _is_cloud_reachable(self) -> bool:
+    def _is_cloud_reachable(self):
         try:
             r = requests.get(f"{self.cloud_url}/api/stats", timeout=2.0)
             return r.status_code == 200
@@ -83,7 +83,7 @@ class SyncWorker:
 
             self._stop_event.wait(self.sync_interval)
 
-    def _sync_pending_incidents(self) -> int:
+    def _sync_pending_incidents(self):
         """
         Reads all incidents where synced_to_cloud = 0, uploads them to cloud,
         then marks them synced in the local DB.

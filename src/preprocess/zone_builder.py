@@ -13,7 +13,7 @@ CENTERLINE   = PROJECT_ROOT / "data" / "legal_zones" / "river_centerline.geojson
 BUFFER_OUT   = PROJECT_ROOT / "data" / "legal_zones" / "river_buffer_1km.geojson"
 
 
-def build_buffer(radius_m: float = 1000.0, output_path: Path = None) -> bool:
+def build_buffer(radius_m = 1000.0, output_path = None):
     """
     Generates a river buffer GeoJSON polygon at the given radius (metres).
     Saves to output_path (default: river_buffer_1km.geojson) and returns True on success.

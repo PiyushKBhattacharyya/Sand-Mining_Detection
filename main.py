@@ -19,7 +19,7 @@ if not venv_python.exists():
     # Fallback to standard python if venv isn't in expected location
     venv_python = "python"
 
-def rebuild_zones(radius_m: float = 1000.0):
+def rebuild_zones(radius_m = 1000.0):
     """Regenerates the river buffer GeoJSON from the latest centerline."""
     sys.path.insert(0, str(project_root / "src" / "preprocess"))
     # pyrefly: ignore [missing-import]
@@ -40,8 +40,8 @@ def run_edge_pipeline():
     subprocess.run([str(venv_python), str(pipeline_path)])
 
 
-def run_webcam_pipeline(server_url: str = "http://localhost:8000",
-                        camera: int = 0, fps: float = 15.0, quality: int = 75):
+def run_webcam_pipeline(server_url = "http://localhost:8000",
+                        camera = 0, fps = 15.0, quality = 75):
     """Streams webcam feeds to the dashboard (drone substitute for local testing)."""
     logger.info("  Starting Webcam Pipeline (drone substitute)...")
     sys.path.insert(0, str(project_root / "src" / "detection"))

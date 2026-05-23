@@ -36,7 +36,7 @@ class IncidentReportPDF(FPDF):
     BRAND_WHITE = (230, 236, 248)
     BRAND_GRAY  = (100, 116, 139)
 
-    def __init__(self, mission_id: str = "BRH-01"):
+    def __init__(self, mission_id = "BRH-01"):
         super().__init__(orientation="P", unit="mm", format="A4")
         self.mission_id  = mission_id
         self.report_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -59,7 +59,7 @@ class IncidentReportPDF(FPDF):
         self.cell(0, 6, f"Page {self.page_no()}/{{nb}}  |  Generated: {self.report_time}", align="C")
 
 
-def _section_title(pdf: IncidentReportPDF, title: str):
+def _section_title(pdf, title):
     pdf.set_fill_color(16, 24, 50)
     pdf.set_text_color(0, 220, 255)
     pdf.set_font("Helvetica", "B", 10)
@@ -69,10 +69,10 @@ def _section_title(pdf: IncidentReportPDF, title: str):
 
 
 def generate_incident_report(
-    incidents: List[Dict[str, Any]],
-    output_path: Optional[Path] = None,
-    mission_id: str = "BRH-01"
-) -> bytes:
+    incidents,
+    output_path = None,
+    mission_id = "BRH-01"
+):
     """
     Generates a full PDF report and returns raw bytes.
     Also saves to output_path if provided.

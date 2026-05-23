@@ -66,7 +66,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def open_camera(index: int) -> cv2.VideoCapture:
+def open_camera(index):
     """Opens the webcam and configures it. Exits on failure."""
     logger.info(f"Opening camera index {index}...")
     cap = cv2.VideoCapture(index)
@@ -88,7 +88,7 @@ def open_camera(index: int) -> cv2.VideoCapture:
     return cap
 
 
-def encode_frame(frame, quality: int) -> bytes:
+def encode_frame(frame, quality):
     """Encodes a numpy BGR frame to JPEG bytes."""
     encode_params = [cv2.IMWRITE_JPEG_QUALITY, quality]
     success, buffer = cv2.imencode(".jpg", frame, encode_params)
@@ -97,7 +97,7 @@ def encode_frame(frame, quality: int) -> bytes:
     return buffer.tobytes()
 
 
-def post_frame(server: str, stream_type: str, jpeg_bytes: bytes, session: requests.Session):
+def post_frame(server, stream_type, jpeg_bytes, session):
     """
     POSTs a JPEG frame to the FastAPI endpoint.
     Silently drops frames if the server is temporarily unreachable

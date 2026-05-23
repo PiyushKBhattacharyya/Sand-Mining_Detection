@@ -19,11 +19,11 @@ EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def save_evidence_crop(
-    frame: np.ndarray,
-    detection: Dict[str, Any],
-    incident_id: int,
-    telemetry: Dict[str, Any]
-) -> Optional[str]:
+    frame,
+    detection,
+    incident_id,
+    telemetry
+):
     """
     Crops the bounding box region from the annotated frame and saves it as JPEG.
     Adds a forensic header band with GPS coords, class, confidence, and timestamp.
@@ -85,10 +85,10 @@ def save_evidence_crop(
 
 
 def save_incident_evidence(
-    annotated_frame: np.ndarray,
-    incident: Dict[str, Any],
-    telemetry: Dict[str, Any]
-) -> List[str]:
+    annotated_frame,
+    incident,
+    telemetry
+):
     """
     Saves evidence crops for ALL detections in an incident cluster.
     Returns list of saved relative paths.
