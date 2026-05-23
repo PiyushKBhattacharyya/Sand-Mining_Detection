@@ -612,13 +612,21 @@
         ::-webkit-scrollbar-thumb:hover {
             background: #4b5563;
         }
+        @keyframes pulse {
+            0% { transform: scale(0.95); opacity: 0.5; }
+            50% { transform: scale(1.2); opacity: 1; }
+            100% { transform: scale(0.95); opacity: 0.5; }
+        }
+        .rec-pulse {
+            animation: pulse 1.2s infinite;
+        }
     </style>
 </head>
 
 <body>
 
     <!-- ═══ HEADER ═══ -->
-    <header class="header">
+    <header class="header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
         <div>
             <h1 style="font-size:18px; font-weight:700; color:#e5e7eb;">
                 Sand Mining Drone Surveillance
@@ -626,8 +634,20 @@
             <p style="font-size:11px; color:#6b7280; margin-top:2px;">Brahmaputra River Monitoring System</p>
         </div>
 
-        <!-- Status bar -->
-        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+        <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;">
+            <!-- Operator profile and Logout -->
+            <div style="display:flex; gap:10px; align-items:center;">
+                <div class="chip" style="background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.15); color: #10b981; display: flex; align-items: center; gap: 6px;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.85;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                    <span id="user-display">Operator</span>
+                </div>
+                <button id="btn-logout" class="map-btn" style="padding: 4px 10px; font-size: 11px; margin: 0; background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.3); color: #f87171; border-radius: 6px; cursor: pointer; font-family: inherit; font-weight: 600;">
+                    Logout
+                </button>
+            </div>
+
+            <!-- Status bar -->
+            <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
             <!-- Connection -->
             <div class="chip">
                 <span>Status:</span>
@@ -661,12 +681,14 @@
                 <strong id="hud-coordinates" class="mono" style="font-size:11px;">Waiting...</strong>
             </div>
         </div>
+        </div>
     </header>
 
     <!-- ═══ TABS ═══ -->
     <div class="tab-bar">
         <button id="btn-tab-tactical" class="tab-btn active">Live Dashboard</button>
         <button id="btn-tab-audit" class="tab-btn">Incident Reports</button>
+        <button id="btn-tab-gallery" class="tab-btn" style="display: none;">Flight Records & Media</button>
     </div>
 
     <!-- ═══ MAIN CONTENT ═══ -->
@@ -746,6 +768,28 @@
                         <input id="buffer-slider" type="range" min="250" max="3000" step="250" value="1000">
                         
                         <div class="divider" style="margin: 8px 0;"></div>
+                        
+                        <!-- ── ADMIN FLIGHT RECORDING SYSTEM ── -->
+                        <div id="admin-record-section" style="display: none;">
+                            <h4 style="font-size: 11px; margin-bottom: 6px; color: #f87171; display: flex; align-items: center; gap: 6px;">
+                                <span id="rec-pulse-dot" class="rec-pulse" style="display:none; width: 8px; height: 8px; border-radius: 50%; background-color: #ef4444; box-shadow: 0 0 8px #ef4444;"></span>
+                                Flight Recording Console
+                            </h4>
+                            <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+                                <button id="btn-start-record" class="map-btn" style="flex: 1; padding: 4px 6px; font-size: 10px; background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.3); color: #f87171; border-radius: 4px; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                                    <svg width="8" height="8" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="40" fill="#ef4444"/></svg>
+                                    Start REC
+                                </button>
+                                <button id="btn-stop-record" class="map-btn" disabled style="flex: 1; padding: 4px 6px; font-size: 10px; background: rgba(55, 65, 81, 0.5); border-color: rgba(75, 85, 99, 0.3); color: #9ca3af; border-radius: 4px; display: flex; align-items: center; justify-content: center; gap: 4px; cursor: not-allowed;">
+                                    <svg width="8" height="8" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect x="15" y="15" width="70" height="70" fill="#9ca3af"/></svg>
+                                    Stop REC
+                                </button>
+                            </div>
+                            <div id="recording-status-text" style="font-size: 9px; color: #9ca3af; margin-bottom: 8px; font-style: italic;">
+                                Status: Standby
+                            </div>
+                            <div class="divider" style="margin: 8px 0;"></div>
+                        </div>
                         
                         <!-- ── DYNAMIC MID-FLIGHT MODEL SWITCHER ── -->
                         <h4 style="font-size: 11px; margin-bottom: 4px; color: #60a5fa;">Mid-Flight AI Model:</h4>
@@ -960,6 +1004,95 @@
                 </div>
             </div>
         </div>
+
+        <!-- ══════════ TAB 3: FLIGHT RECORDS & GALLERY ══════════ -->
+        <div id="tab-gallery" class="hidden flex-col" style="flex:1; gap:20px; overflow-y:auto;">
+            <div class="grid-12" style="flex:1; gap:20px; min-height:0;">
+                <!-- Left: Flight Recording List -->
+                <div class="card flex-col" style="flex: 5; padding:16px; min-height: 450px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                        <div>
+                            <h3 style="font-size:14px; font-weight:700; color:#e5e7eb; display:flex; align-items:center; gap:6px;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:#f87171;"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line><line x1="2" y1="7" x2="7" y2="7"></line><line x1="2" y1="17" x2="7" y2="17"></line><line x1="17" y1="17" x2="22" y2="17"></line><line x1="17" y1="7" x2="22" y2="7"></line></svg>
+                                Flight Video Archives
+                            </h3>
+                            <p style="font-size:11px; color:#6b7280; margin-top:2px;">Recorded surveillance logs from DJI Drone</p>
+                        </div>
+                        <button id="btn-refresh-gallery" class="map-btn" style="padding: 4px 10px; font-size:11px; margin:0; background:rgba(96, 165, 250, 0.1); border-color:rgba(96, 165, 250, 0.2); color:#60a5fa; border-radius:6px; cursor:pointer;">
+                            Refresh Logs
+                        </button>
+                    </div>
+                    
+                    <div class="flex-grow" style="overflow-y:auto; max-height:480px;">
+                        <table class="audit-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Timestamp</th>
+                                    <th>Duration</th>
+                                    <th>Size</th>
+                                    <th style="text-align:right;">Control</th>
+                                </tr>
+                            </thead>
+                            <tbody id="gallery-list-body">
+                                <tr>
+                                    <td colspan="5" style="padding:30px; text-align:center; color:#6b7280;">No flight recordings found. Start a mission and toggle REC to capture feeds.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Right: Active Video Player -->
+                <div class="card flex-col" style="flex: 7; padding:16px; justify-content:space-between; min-height: 450px;">
+                    <div>
+                        <h3 style="font-size:12px; font-weight:700; text-transform:uppercase; color:#6b7280; margin-bottom:16px; padding-bottom:8px; border-bottom:1px solid #374151;">
+                            Surveillance Feed Playback
+                        </h3>
+
+                        <!-- Standby State -->
+                        <div id="player-empty" style="text-align:center; padding:100px 0; color:#6b7280;">
+                            <div style="font-size:42px; margin-bottom:12px; opacity:0.8;">🎬</div>
+                            <div style="font-size:13px; font-weight:600; color:#e5e7eb;">No Media Selected</div>
+                            <div style="font-size:11px; margin-top:4px;">Select a recorded flight archive from the list to begin playback.</div>
+                        </div>
+
+                        <!-- Active Video Container -->
+                        <div id="player-active" class="hidden" style="display:flex; flex-direction:column; gap:16px;">
+                            <div style="background:#090d16; border-radius:6px; overflow:hidden; border:1px solid #1f2937; position:relative; aspect-ratio:16/9; display:flex; align-items:center; justify-content:center;">
+                                <video id="gallery-video-player" controls style="width:100%; height:100%; object-fit:contain; outline:none; background:#000;">
+                                    Your browser does not support the video tag.
+                                </video>
+                            </div>
+                            
+                            <div style="background: rgba(17, 24, 39, 0.5); border: 1px solid #1f2937; border-radius: 6px; padding: 12px; display:flex; flex-direction:column; gap:8px;">
+                                <div style="display:flex; justify-content:space-between; font-size:11px;">
+                                    <span style="color:#9ca3af; font-weight:500;">File Path:</span>
+                                    <span id="player-filepath" style="color:#e5e7eb;" class="mono">data/recordings/unknown.mp4</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; font-size:11px;">
+                                    <span style="color:#9ca3af; font-weight:500;">Size:</span>
+                                    <span id="player-filesize" style="color:#e5e7eb;" class="mono">0.0 MB</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; font-size:11px;">
+                                    <span style="color:#9ca3af; font-weight:500;">Duration:</span>
+                                    <span id="player-duration" style="color:#e5e7eb;" class="mono">0.0 seconds</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="player-actions" class="hidden" style="border-top:1px solid #374151; padding-top:12px; margin-top:12px; display:flex; gap:8px;">
+                        <a id="lnk-download-video" href="#" download class="btn btn-primary" style="flex:1; justify-content:center; text-decoration:none; padding:8px 0; text-align:center; font-size:11px;">
+                            Download Video File
+                        </a>
+                        <a id="lnk-external-video" href="#" target="_blank" class="btn" style="flex:1; justify-content:center; text-decoration:none; padding:8px 0; text-align:center; font-size:11px; border-color:#4b5563; color:#9ca3af;">
+                            Open in New Tab ↗
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
     </main>
 
     <!-- ═══════════════════════ JAVASCRIPT (UNCHANGED LOGIC) ═══════════════════════ -->
@@ -967,24 +1100,40 @@
         // DOM Handles
         const tabTactical = document.getElementById('tab-tactical');
         const tabAudit = document.getElementById('tab-audit');
+        const tabGallery = document.getElementById('tab-gallery');
         const btnTabTactical = document.getElementById('btn-tab-tactical');
         const btnTabAudit = document.getElementById('btn-tab-audit');
+        const btnTabGallery = document.getElementById('btn-tab-gallery');
 
         // Tab switching
         btnTabTactical.addEventListener('click', () => {
             tabTactical.classList.remove('hidden');
             tabAudit.classList.add('hidden');
+            tabGallery.classList.add('hidden');
             btnTabTactical.classList.add('active');
             btnTabAudit.classList.remove('active');
+            btnTabGallery.classList.remove('active');
             setTimeout(() => { map.invalidateSize() }, 100);
         });
 
         btnTabAudit.addEventListener('click', () => {
             tabAudit.classList.remove('hidden');
             tabTactical.classList.add('hidden');
+            tabGallery.classList.add('hidden');
             btnTabAudit.classList.add('active');
             btnTabTactical.classList.remove('active');
+            btnTabGallery.classList.remove('active');
             loadAuditData();
+        });
+
+        btnTabGallery.addEventListener('click', () => {
+            tabGallery.classList.remove('hidden');
+            tabTactical.classList.add('hidden');
+            tabAudit.classList.add('hidden');
+            btnTabGallery.classList.add('active');
+            btnTabTactical.classList.remove('active');
+            btnTabAudit.classList.remove('active');
+            loadGalleryData();
         });
 
         // Initialize Leaflet Map
@@ -1636,7 +1785,211 @@
             });
         })();
 
+        // Operator Authentication & Status Check
+        let currentUser = null;
+
+        function checkAuthStatus() {
+            fetch('/api/auth/status')
+                .then(res => {
+                    if (!res.ok) {
+                        window.location.href = '/login';
+                        throw new Error('Not authenticated');
+                    }
+                    return res.json();
+                })
+                .then(user => {
+                    currentUser = user;
+                    const userDisplay = document.getElementById('user-display');
+                    if (userDisplay) {
+                        userDisplay.textContent = user.username;
+                    }
+                    // Role-based privilege gating: only 'admin' can see recordings
+                    if (user.role === 'admin') {
+                        const adminSec = document.getElementById('admin-record-section');
+                        if (adminSec) adminSec.style.display = 'block';
+                        const tabGalleryBtn = document.getElementById('btn-tab-gallery');
+                        if (tabGalleryBtn) tabGalleryBtn.style.display = 'inline-block';
+                    }
+                })
+                .catch(err => {
+                    console.error('Auth verification check failed:', err);
+                });
+        }
+
+        // Logout
+        const btnLogout = document.getElementById('btn-logout');
+        if (btnLogout) {
+            btnLogout.addEventListener('click', () => {
+                fetch('/api/auth/logout', { method: 'POST' })
+                    .then(() => {
+                        window.location.href = '/login';
+                    })
+                    .catch(err => console.error('Logout failed:', err));
+            });
+        }
+
+        // Flight Recording UI Controls
+        const btnStartRecord = document.getElementById('btn-start-record');
+        const btnStopRecord = document.getElementById('btn-stop-record');
+        const recPulseDot = document.getElementById('rec-pulse-dot');
+        const recordingStatusText = document.getElementById('recording-status-text');
+        let recordTimer = null;
+        let recordStartTime = null;
+
+        function updateRecordTimer() {
+            if (!recordStartTime) return;
+            const elapsed = Math.round((Date.now() - recordStartTime) / 1000);
+            recordingStatusText.textContent = `REC: ${elapsed}s active`;
+        }
+
+        if (btnStartRecord) {
+            btnStartRecord.addEventListener('click', () => {
+                fetch('/api/admin/record/start', { method: 'POST' })
+                    .then(res => {
+                        if (!res.ok) throw new Error('Failed to start recording');
+                        return res.json();
+                    })
+                    .then(data => {
+                        btnStartRecord.disabled = true;
+                        btnStartRecord.style.background = 'rgba(55, 65, 81, 0.5)';
+                        btnStartRecord.style.borderColor = 'rgba(75, 85, 99, 0.3)';
+                        btnStartRecord.style.color = '#9ca3af';
+                        btnStartRecord.style.cursor = 'not-allowed';
+                        
+                        btnStopRecord.disabled = false;
+                        btnStopRecord.style.background = 'rgba(239, 68, 68, 0.15)';
+                        btnStopRecord.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+                        btnStopRecord.style.color = '#f87171';
+                        btnStopRecord.style.cursor = 'pointer';
+                        
+                        recPulseDot.style.display = 'inline-block';
+                        recordStartTime = Date.now();
+                        recordingStatusText.textContent = 'REC: 0s active';
+                        recordingStatusText.style.color = '#f87171';
+                        
+                        if (recordTimer) clearInterval(recordTimer);
+                        recordTimer = setInterval(updateRecordTimer, 1000);
+                    })
+                    .catch(err => {
+                        alert('❌ Error: ' + err.message);
+                    });
+            });
+        }
+
+        if (btnStopRecord) {
+            btnStopRecord.addEventListener('click', () => {
+                fetch('/api/admin/record/stop', { method: 'POST' })
+                    .then(res => {
+                        if (!res.ok) throw new Error('Failed to stop recording');
+                        return res.json();
+                    })
+                    .then(data => {
+                        btnStartRecord.disabled = false;
+                        btnStartRecord.style.background = 'rgba(239, 68, 68, 0.15)';
+                        btnStartRecord.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+                        btnStartRecord.style.color = '#f87171';
+                        btnStartRecord.style.cursor = 'pointer';
+                        
+                        btnStopRecord.disabled = true;
+                        btnStopRecord.style.background = 'rgba(55, 65, 81, 0.5)';
+                        btnStopRecord.style.borderColor = 'rgba(75, 85, 99, 0.3)';
+                        btnStopRecord.style.color = '#9ca3af';
+                        btnStopRecord.style.cursor = 'not-allowed';
+                        
+                        recPulseDot.style.display = 'none';
+                        if (recordTimer) clearInterval(recordTimer);
+                        recordTimer = null;
+                        recordStartTime = null;
+                        
+                        const mb = (data.size_bytes / (1024 * 1024)).toFixed(2);
+                        recordingStatusText.textContent = `Saved: ${data.duration_seconds}s (${mb} MB)`;
+                        recordingStatusText.style.color = '#34d399';
+                        
+                        // If we are currently on the gallery tab, refresh the table automatically!
+                        if (btnTabGallery.classList.contains('active')) {
+                            loadGalleryData();
+                        }
+                    })
+                    .catch(err => {
+                        alert('❌ Error: ' + err.message);
+                    });
+            });
+        }
+
+        // Flight Records & Media Playback Gallery
+        function loadGalleryData() {
+            const body = document.getElementById('gallery-list-body');
+            body.innerHTML = '<tr><td colspan="5" style="padding:30px; text-align:center; color:#6b7280;">Loading archives...</td></tr>';
+            
+            fetch('/api/admin/recordings')
+                .then(res => {
+                    if (!res.ok) throw new Error('Failed to fetch recordings');
+                    return res.json();
+                })
+                .then(recordings => {
+                    body.innerHTML = '';
+                    if (recordings.length === 0) {
+                        body.innerHTML = '<tr><td colspan="5" style="padding:30px; text-align:center; color:#6b7280;">No flight recordings found. Start a mission and toggle REC to capture feeds.</td></tr>';
+                        return;
+                    }
+                    
+                    recordings.forEach(rec => {
+                        const tr = document.createElement('tr');
+                        const localTime = new Date(rec.timestamp).toLocaleString();
+                        const mb = (rec.size_bytes / (1024 * 1024)).toFixed(2);
+                        
+                        tr.innerHTML = `
+                            <td>${rec.id}</td>
+                            <td>${localTime}</td>
+                            <td>${rec.duration_seconds}s</td>
+                            <td>${mb} MB</td>
+                            <td style="text-align:right;">
+                                <button class="btn btn-primary btn-play-rec" data-filepath="${rec.filepath}" data-duration="${rec.duration_seconds}" data-size="${mb}" style="padding:4px 8px; font-size:10px; margin:0;">Play Feeds</button>
+                            </td>
+                        `;
+                        
+                        tr.querySelector('.btn-play-rec').addEventListener('click', (e) => {
+                            const btn = e.target;
+                            const path = btn.getAttribute('data-filepath');
+                            const size = btn.getAttribute('data-size');
+                            const dur = btn.getAttribute('data-duration');
+                            playVideo(path, size, dur);
+                        });
+                        
+                        body.appendChild(tr);
+                    });
+                })
+                .catch(err => {
+                    body.innerHTML = `<tr><td colspan="5" style="padding:30px; text-align:center; color:#ef4444;">Failed to load logs: ${err.message}</td></tr>`;
+                });
+        }
+
+        function playVideo(filepath, sizeMB, durationSec) {
+            document.getElementById('player-empty').classList.add('hidden');
+            document.getElementById('player-active').classList.remove('hidden');
+            document.getElementById('player-actions').classList.remove('hidden');
+            
+            document.getElementById('player-filepath').textContent = filepath;
+            document.getElementById('player-filesize').textContent = `${sizeMB} MB`;
+            document.getElementById('player-duration').textContent = `${durationSec} seconds`;
+            
+            const videoUrl = '/' + filepath;
+            document.getElementById('lnk-download-video').href = videoUrl;
+            document.getElementById('lnk-external-video').href = videoUrl;
+            
+            const player = document.getElementById('gallery-video-player');
+            player.src = videoUrl;
+            player.load();
+            player.play().catch(e => console.log('Autoplay blocked:', e));
+        }
+
+        const btnRefreshGallery = document.getElementById('btn-refresh-gallery');
+        if (btnRefreshGallery) {
+            btnRefreshGallery.addEventListener('click', () => loadGalleryData());
+        }
+
         // Initialize
+        checkAuthStatus();
         connectWebSocket();
     </script>
 </body>
