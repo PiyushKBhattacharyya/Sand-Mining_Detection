@@ -1048,15 +1048,25 @@ async def update_flight_config(request: Request, data: Dict[str, Any]):
     if not user:
         raise HTTPException(status_code=401, detail="Unauthorized")
     global flight_config, has_reached_starting_spot
+    
+    old_lat = flight_config.get("start_lat", 0.0)
+    old_lng = flight_config.get("start_lng", 0.0)
+    old_rad = flight_config.get("start_radius_meters", 500.0)
+
+    new_lat = float(data.get("start_lat", flight_config["start_lat"]))
+    new_lng = float(data.get("start_lng", data.get("start_lon", flight_config["start_lng"])))
+    new_rad = float(data.get("start_radius_meters", flight_config["start_radius_meters"]))
+
     flight_config["active_model"]        = data.get("active_model", flight_config["active_model"])
-    flight_config["start_lat"]           = float(data.get("start_lat", flight_config["start_lat"]))
-    # Support longitude mapped as either 'start_lng' or 'start_lon'
-    flight_config["start_lng"]           = float(data.get("start_lng", data.get("start_lon", flight_config["start_lng"])))
-    flight_config["start_radius_meters"] = float(data.get("start_radius_meters", flight_config["start_radius_meters"]))
+    flight_config["start_lat"]           = new_lat
+    flight_config["start_lng"]           = new_lng
+    flight_config["start_radius_meters"] = new_rad
     flight_config["detection_enabled"]   = bool(data.get("detection_enabled", flight_config["detection_enabled"]))
     
-    # Reset starting spot trigger when operator updates parameters
-    has_reached_starting_spot = False
+    # Reset starting spot trigger only if starting geofence coordinates/radius actually changed!
+    if old_lat != new_lat or old_lng != new_lng or old_rad != new_rad:
+        has_reached_starting_spot = False
+        logger.info("🎯 Geofence start coordinates updated — resetting starting spot trigger.")
     
     logger.info(f"🛰️ Updated Flight Configuration: {flight_config}")
     
