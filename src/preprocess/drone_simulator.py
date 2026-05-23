@@ -1,0 +1,258 @@
+import os
+import json
+import time
+import math
+import random
+from datetime import datetime
+from pathlib import Path
+import logging
+from db_setup import DatabaseManager
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+class DroneSimulator:
+    """
+    Simulates a DJI drone flight path along the river centerline.
+    Generates telemetry packets and logs them to the local PostgreSQL/SQLite database.
+    """
+    def __init__(self, db_manager, centerline_path=None, speed_kmh=40.0, altitude_m=60.0):
+        self.db_manager = db_manager
+        self.project_root = Path(__file__).resolve().parent.parent.parent
+        self.centerline_path = centerline_path or (
+            self.project_root / "data" / "legal_zones" / "river_centerline.geojson"
+        )
+        
+        self.speed_mps = speed_kmh / 3.6  # Convert km/h to m/s
+        self.altitude_m = altitude_m
+        self.battery = 100.0
+        self.flight_points = []
+        
+        # Load and parse path
+        self._load_flight_path()
+
+    def _load_flight_path(self):
+        """Loads and interpolates the centerline geojson into high-resolution coordinate steps."""
+        if not Path(self.centerline_path).exists():
+            logger.error(f"Centerline file not found: {self.centerline_path}")
+            return
+        
+        with open(self.centerline_path, 'r') as f:
+            data = json.load(f)
+            
+        # Extract original coordinates (lon, lat)
+        raw_coords = data['features'][0]['geometry']['coordinates']
+        logger.info(f"Loaded {len(raw_coords)} primary waypoints from centerline.")
+        
+        # Interpolate between waypoints to create high-resolution coordinates
+        self.flight_points = []
+        for i in range(len(raw_coords) - 1):
+            lon1, lat1 = raw_coords[i]
+            lon2, lat2 = raw_coords[i+1]
+            
+            # Estimate distance in meters (approx: 1 deg lat = 111320m, 1 deg lon = 111320 * cos(lat) )
+            lat_mid = (lat1 + lat2) / 2.0
+            dy = (lat2 - lat1) * 111320
+            dx = (lon2 - lon1) * 111320 * math.cos(math.radians(lat_mid))
+            distance = math.sqrt(dx**2 + dy**2)
+            
+            # Number of steps (at 5 Hz simulation frequency)
+            steps = max(10, int(distance / (self.speed_mps / 5.0)))
+            
+            for step in range(steps):
+                t = step / steps
+                # Linear interpolation along centerline
+                interp_lon = lon1 + (lon2 - lon1) * t
+                interp_lat = lat1 + (lat2 - lat1) * t
+                
+                # Add a lateral sinusoidal weave to simulate panning/sweeping the riverbed
+                # Toggles between left and right of the river up to 120 meters
+                weave_phase = (i * steps + step) * 0.05
+                # Weave up to 1800 meters laterally so the drone continuously flies IN and OUT of the buffer zone
+                lateral_offset_meters = math.sin(weave_phase) * 1800.0
+                
+                # Calculate heading angle
+                heading = math.atan2(dy, dx)
+                # Perpendicular angle to heading (for lateral offset)
+                perp_angle = heading + math.pi / 2.0
+                
+                # Convert lateral offset back to degrees
+                offset_lat = (lateral_offset_meters * math.sin(perp_angle)) / 111320
+                offset_lon = (lateral_offset_meters * math.cos(perp_angle)) / (111320 * math.cos(math.radians(interp_lat)))
+                
+                final_lat = interp_lat + offset_lat
+                final_lon = interp_lon + offset_lon
+                
+                # Calculate heading in degrees (0-360 clockwise from North)
+                heading_deg = (90.0 - math.degrees(heading)) % 360.0
+                
+                self.flight_points.append({
+                    'lat': final_lat,
+                    'lon': final_lon,
+                    'heading': heading_deg
+                })
+                
+        logger.info(f"Generated {len(self.flight_points)} high-resolution flight points.")
+
+    def generate_dynamic_test_path(self, target_lat: float, target_lon: float, start_radius_meters: float = 500.0):
+        """
+        WHAT: Overwrites the static flight path centerline coordinates with a dynamic 
+        launch-to-target flight trajectory.
+        WHY: Allows the operator to test:
+          1. TAKE-OFF phase from a random location miles away (AI detection bypassed, passive telemetry streaming).
+          2. TRANSIT phase flying directly towards target (AI remains passive, saving drone battery).
+          3. ARRIVAL phase crossing into the start_radius geofence (AI triggers immediately, beginning active YOLO detections!).
+        """
+        # If no custom geofence start coordinate has been sent from the VPS yet, do nothing
+        if target_lat == 0.0 or target_lon == 0.0:
+            logger.info("⚠️ Geofence start coordinates are 0.0 (unconfigured). Continuing on standard path.")
+            return
+
+        logger.info(f"🛰️ Dynamically generating launch-to-target path towards geofence: {target_lat}, {target_lon}")
+
+        # 1. GENERATE RANDOM TAKE-OFF LOCATION (approx 4-6 kilometers away from target)
+        random.seed(int(time.time()))
+        angle = random.uniform(0, 2 * math.pi)
+        distance_km = random.uniform(4.0, 6.0) # Takeoff home base is 4-6km away!
+        
+        # 1 deg latitude = 111,320 meters
+        offset_lat = (distance_km * 1000.0 * math.sin(angle)) / 111320.0
+        offset_lon = (distance_km * 1000.0 * math.cos(angle)) / (111320.0 * math.cos(math.radians(target_lat)))
+        
+        start_lat = target_lat + offset_lat
+        start_lon = target_lon + offset_lon
+
+        # Initialize new dynamic trajectory points
+        new_flight_points = []
+
+        # 2. TRANSIT PHASE: Interpolate from random Takeoff point to the Geofence Boundary
+        # Speed: ~42 km/h (~11.6 m/s) at 3 FPS = 3.8 meters per simulation step
+        step_distance_meters = (self.speed_mps / 3.0) 
+        
+        # Let's run a linear interpolation path towards the target coordinate.
+        # We generate 100 high-resolution step points along this transit path.
+        transit_steps = 100
+        for step in range(transit_steps):
+            t = step / transit_steps
+            curr_lat = start_lat + (target_lat - start_lat) * t
+            curr_lon = start_lon + (target_lon - start_lon) * t
+            
+            # Simple bearing/heading from start to target
+            dy = (target_lat - start_lat) * 111320.0
+            dx = (target_lon - start_lon) * 111320.0 * math.cos(math.radians(target_lat))
+            heading = (90.0 - math.degrees(math.atan2(dy, dx))) % 360.0
+
+            new_flight_points.append({
+                'lat': curr_lat,
+                'lon': curr_lon,
+                'heading': heading
+            })
+
+        # 3. ARRIVAL & ORBIT PHASE: Once at target, simulate an active search orbit inside geofence!
+        # Drone flies in a circle of 200m radius around the target to scan for illegal sand mining trucks!
+        orbit_steps = 60
+        orbit_radius_meters = 200.0
+        for step in range(orbit_steps):
+            theta = (step / orbit_steps) * 2 * math.pi
+            
+            orbit_lat = target_lat + (orbit_radius_meters * math.sin(theta)) / 111320.0
+            orbit_lon = target_lon + (orbit_radius_meters * math.cos(theta)) / (111320.0 * math.cos(math.radians(target_lat)))
+            
+            # Heading is tangent to the circle
+            heading = (math.degrees(theta) + 90.0) % 360.0
+
+            new_flight_points.append({
+                'lat': orbit_lat,
+                'lon': orbit_lon,
+                'heading': heading
+            })
+
+        # Overwrite the flight points!
+        self.flight_points = new_flight_points
+        logger.info(f"✅ Dynamic launch-to-target path successfully generated! Steps: {len(self.flight_points)}")
+
+
+    def run_simulation(self, duration_seconds=120, frequency_hz=5):
+        """Runs the telemetry loop, logging database coordinates at the specified frequency."""
+        conn = self.db_manager.get_connection()
+        cursor = conn.cursor()
+        
+        logger.info(f"Starting Drone Telemetry Simulator at {frequency_hz} Hz...")
+        
+        sleep_interval = 1.0 / frequency_hz
+        total_steps = int(duration_seconds * frequency_hz)
+        
+        is_pg = self.db_manager.db_type == "postgresql"
+        insert_query = """
+        INSERT INTO telemetry_logs (
+            timestamp, latitude, longitude, altitude_agl, 
+            gimbal_pitch, gimbal_yaw, gimbal_roll, 
+            drone_speed, battery_percentage, gps_accuracy_m
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """ if is_pg else """
+        INSERT INTO telemetry_logs (
+            timestamp, latitude, longitude, altitude_agl, 
+            gimbal_pitch, gimbal_yaw, gimbal_roll, 
+            drone_speed, battery_percentage, gps_accuracy_m
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+
+        try:
+            for step in range(total_steps):
+                point_idx = step % len(self.flight_points)
+                point = self.flight_points[point_idx]
+                
+                # Dynamic simulated variables
+                timestamp = datetime.now().isoformat()
+                latitude = point['lat']
+                longitude = point['lon']
+                
+                # Small random variations on altitude and speed
+                altitude = self.altitude_m + random.uniform(-2.0, 2.0)
+                speed = self.speed_mps + random.uniform(-0.5, 0.5)
+                
+                # Gimbal pitch between -45 (looking ahead) and -90 (looking straight down)
+                gimbal_pitch = -60.0 + math.sin(step * 0.1) * 20.0
+                # Gimbal yaw matches flight heading with slight adjustments
+                gimbal_yaw = (point['heading'] + random.uniform(-3.0, 3.0)) % 360.0
+                gimbal_roll = random.uniform(-1.0, 1.0)
+                
+                # Drain battery slowly (approx 0.05% per step at 5 Hz => 15 mins total flight time)
+                self.battery = max(0.0, self.battery - 0.02)
+                gps_accuracy = random.uniform(0.05, 1.2) # High accuracy
+                
+                # Log entry parameters
+                params = (
+                    timestamp, latitude, longitude, altitude,
+                    gimbal_pitch, gimbal_yaw, gimbal_roll,
+                    speed, int(self.battery), gps_accuracy
+                )
+                
+                cursor.execute(insert_query, params)
+                conn.commit()
+                
+                if step % 25 == 0:
+                    logger.info(
+                        f"Telemetry Logged [Step {step}/{total_steps}]: "
+                        f"Lat: {latitude:.6f}, Lon: {longitude:.6f}, "
+                        f"Alt: {altitude:.1f}m, Batt: {int(self.battery)}%"
+                    )
+                
+                time.sleep(sleep_interval)
+                
+        except KeyboardInterrupt:
+            logger.info("Simulation stopped by user.")
+        finally:
+            cursor.close()
+            conn.close()
+            logger.info("Database connection closed. Telemetry Simulator Finished.")
+
+if __name__ == "__main__":
+    db = DatabaseManager(db_type="sqlite")
+    # Make sure tables exist
+    db.initialize_database()
+    
+    sim = DroneSimulator(db_manager=db, speed_kmh=45.0, altitude_m=65.0)
+    # Run for 20 seconds (100 steps) for testing
+    sim.run_simulation(duration_seconds=20, frequency_hz=5)

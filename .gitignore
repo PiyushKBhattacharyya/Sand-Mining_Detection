@@ -1,0 +1,19 @@
+# Virtual environment
+.venv/
+venv/
+
+# Detection output data
+data/detections/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Data
+data/local_edge.db
+
+# Scratch Folders
+scratch/
+.gemini/
