@@ -237,6 +237,16 @@ class DatabaseManager:
         logger.info(f" Edge database initialization complete. Active: {self.db_type.upper()}")
 
 if __name__ == "__main__":
-    # Test execution
-    manager = DatabaseManager(db_type="sqlite")
+    # Try importing from config, fall back to environment variables
+    try:
+        import sys
+        from pathlib import Path
+        project_root = Path(__file__).resolve().parent.parent.parent
+        sys.path.insert(0, str(project_root))
+        from config import DB_TYPE, PG_CONN_STR
+    except ImportError:
+        DB_TYPE = os.getenv("DB_TYPE", "sqlite")
+        PG_CONN_STR = os.getenv("PG_CONN_STR", "")
+    
+    manager = DatabaseManager(db_type=DB_TYPE, pg_conn_str=PG_CONN_STR)
     manager.initialize_database()
