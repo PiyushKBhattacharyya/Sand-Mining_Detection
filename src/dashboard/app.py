@@ -4,9 +4,11 @@ import base64
 import logging
 import threading
 import time
+import hashlib
+import uuid
 from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, HTTPException, Request
-from fastapi.responses import StreamingResponse, HTMLResponse, Response
+from fastapi.responses import StreamingResponse, HTMLResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 import asyncio
@@ -22,6 +24,30 @@ from db_setup import DatabaseManager
 from pdf_generator import generate_incident_report
 # pyrefly: ignore [missing-import]
 from zone_builder import build_buffer
+
+# Salting and SHA-256 Hashing helper functions for secure authentication
+def hash_password(password: str, salt: str = None) -> str:
+    if not salt:
+        salt = uuid.uuid4().hex
+    hashed = hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
+    return f"{salt}:{hashed}"
+
+def verify_password(password: str, stored_password_hash: str) -> bool:
+    try:
+        salt, hashed = stored_password_hash.split(":")
+        check_hash = hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
+        return check_hash == hashed
+    except Exception:
+        return False
+
+# In-memory session store
+ACTIVE_SESSIONS: Dict[str, Dict[str, str]] = {}
+
+def get_session_user(request: Request) -> Optional[Dict[str, str]]:
+    session_id = request.cookies.get("session_id")
+    if session_id and session_id in ACTIVE_SESSIONS:
+        return ACTIVE_SESSIONS[session_id]
+    return None
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -622,16 +648,22 @@ async def frame_generator(stream_type: str):
 
 # Live Video Endpoints (multipart MJPEG)
 @app.get("/stream/raw")
-async def stream_raw():
+async def stream_raw(request: Request):
     """Serves the raw video feed from the DJI drone camera."""
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     return StreamingResponse(
         frame_generator("raw"),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
 
 @app.get("/stream/overlay")
-async def stream_overlay():
+async def stream_overlay(request: Request):
     """Serves the real-time AI bounding box overlay video feed."""
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     return StreamingResponse(
         frame_generator("overlay"),
         media_type="multipart/x-mixed-replace; boundary=frame"
@@ -729,11 +761,15 @@ def parse_date_to_utc(dt_str: str, is_end: bool = False) -> str:
 
 @app.get("/api/incidents")
 def get_incidents(
+    request: Request,
     severity: Optional[str] = Query(None, description="Filter by severity: EXTREME, SEVERE, MEDIUM, LOW"),
     start_date: Optional[str] = Query(None, description="Filter by start date/time (local timezone)"),
     end_date: Optional[str] = Query(None, description="Filter by end date/time (local timezone)")
 ):
     """Retrieves list of all historic clusters/incidents with optional filtering."""
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     conn = db_manager.get_connection()
     cursor = conn.cursor()
     
@@ -795,6 +831,7 @@ def get_incidents(
 
 @app.get("/api/detections")
 def get_detections(
+    request: Request,
     incident_id: Optional[int] = Query(None, description="Filter detections by Incident (Cluster) ID"),
     class_name: Optional[str] = Query(None, description="Filter by class type: jcb, truck, person")
 ):
@@ -802,6 +839,9 @@ def get_detections(
     Retrieves individual object detections with coordinates.
     Allows powerful class-level filtering (e.g., viewing ONLY workers/humans)!
     """
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     conn = db_manager.get_connection()
     cursor = conn.cursor()
     
@@ -858,8 +898,11 @@ def get_detections(
         conn.close()
 
 @app.get("/api/stats")
-def get_dashboard_stats():
+def get_dashboard_stats(request: Request):
     """Retrieves aggregate telemetry and spatial count metrics for the widgets."""
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     conn = db_manager.get_connection()
     cursor = conn.cursor()
     
@@ -891,12 +934,16 @@ def get_dashboard_stats():
         conn.close()
 
 @app.get("/api/report/pdf")
-def export_pdf_report(severity: Optional[str] = Query(None, description="Filter by severity"),
+def export_pdf_report(request: Request,
+                      severity: Optional[str] = Query(None, description="Filter by severity"),
                       mission_id: str = Query("BRH-01", description="Mission identifier")):
     """
     Generates and streams a PDF incident report.
     Includes incident table, evidence gallery, and GPS coordinate appendix.
     """
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     conn   = db_manager.get_connection()
     cursor = conn.cursor()
     try:
@@ -937,21 +984,27 @@ def export_pdf_report(severity: Optional[str] = Query(None, description="Filter 
 @app.get("/api/evidence/{filename}")
 # ── FLIGHT CONTROL APIS (MID-FLIGHT SWITCHING & DYNAMIC GEOFENCING) ────────
 @app.get("/api/flight/config")
-def get_flight_config():
+def get_flight_config(request: Request):
     """
     WHAT: REST endpoint returning active flight mission control config.
     WHY: Checked periodically by the drone edge pipeline to load the correct
     model mid-flight and monitor geofenced start coordinates!
     """
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     return flight_config
 
 
 @app.post("/api/flight/config")
-async def update_flight_config(data: Dict[str, Any]):
+async def update_flight_config(data: Dict[str, Any], request: Request):
     """
     WHAT: Endpoint to update active model and geofencing coordinates.
     WHY: Operators can switch YOLOv8 vs YOLOv10 mid-flight or adjust the trigger geofence!
     """
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     global flight_config, has_reached_starting_spot
     flight_config["active_model"]        = data.get("active_model", flight_config["active_model"])
     flight_config["start_lat"]           = float(data.get("start_lat", flight_config["start_lat"]))
@@ -975,13 +1028,16 @@ async def update_flight_config(data: Dict[str, Any]):
 
 # ── POSTGRES VPS DIRECT IMAGE RETRIEVAL API ──────────────────────────────────
 @app.get("/api/evidence/db/{incident_id}")
-def get_evidence_image_from_db(incident_id: int):
+def get_evidence_image_from_db(incident_id: int, request: Request):
     """
     WHAT: Retrieves binary JPEG data directly from PostgreSQL / SQLite blob storage.
     WHY: Allows serving evidence snapshots to the frontend HTML direct from the DB
     without any dependency on the server file system! Includes seamless local
     filesystem fallback for offline/local development.
     """
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     conn = db_manager.get_connection()
     cursor = conn.cursor()
     ph = "%s" if db_manager.db_type == "postgresql" else "?"
@@ -1050,13 +1106,16 @@ def get_evidence_image(filename: str):
 
 
 @app.get("/api/zone/radius")
-def get_zone_radius():
+def get_zone_radius(request: Request):
     """Returns the currently active buffer radius in metres."""
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     return {"radius_m": active_buffer_radius_m}
 
 
 @app.post("/api/zone/radius")
-async def set_zone_radius(data: Dict[str, Any]):
+async def set_zone_radius(data: Dict[str, Any], request: Request):
     """
     Updates the active zone enforcement radius.
     1. Rebuilds river_buffer_1km.geojson with the new radius (server-side)
@@ -1064,6 +1123,9 @@ async def set_zone_radius(data: Dict[str, Any]):
        - The browser map redraws its Turf.js buffer to match
        - The Jetson sync_worker can detect the change and reload its ClusterEngine
     """
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     global active_buffer_radius_m, global_cluster_engine
 
     radius_m = float(data.get("radius_m", 1000.0))
@@ -1100,6 +1162,12 @@ async def set_zone_radius(data: Dict[str, Any]):
 # WebSocket endpoint
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    # Extract session_id from cookie to verify connection
+    session_id = websocket.cookies.get("session_id")
+    if not session_id or session_id not in ACTIVE_SESSIONS:
+        await websocket.close(code=1008) # Policy Violation
+        return
+        
     await manager.connect(websocket)
     try:
         while True:
@@ -1110,10 +1178,90 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         manager.disconnect(websocket)
 
+# Auth API Endpoints
+@app.post("/api/auth/login")
+async def login(request: Request, response: Response, payload: Dict[str, str]):
+    username = payload.get("username")
+    password = payload.get("password")
+    
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="Username and password are required")
+        
+    conn = db_manager.get_connection()
+    cursor = conn.cursor()
+    
+    is_pg = db_manager.db_type == "postgresql"
+    query = "SELECT password_hash, role FROM users WHERE username = %s;" if is_pg else "SELECT password_hash, role FROM users WHERE username = ?;"
+    
+    try:
+        cursor.execute(query, (username,))
+        row = cursor.fetchone()
+    except Exception as e:
+        logger.error(f"Error querying user: {e}")
+        raise HTTPException(status_code=500, detail="Database lookup failure")
+    finally:
+        cursor.close()
+        conn.close()
+        
+    if not row or not verify_password(password, row[0]):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+        
+    role = row[1]
+    
+    # Create session
+    session_id = uuid.uuid4().hex
+    ACTIVE_SESSIONS[session_id] = {
+        "username": username,
+        "role": role
+    }
+    
+    response.set_cookie(
+        key="session_id",
+        value=session_id,
+        httponly=True,
+        max_age=3600 * 24, # 24 hours
+        samesite="lax",
+        secure=False
+    )
+    
+    return {"status": "success", "username": username, "role": role}
+
+@app.post("/api/auth/logout")
+async def logout(request: Request, response: Response):
+    session_id = request.cookies.get("session_id")
+    if session_id in ACTIVE_SESSIONS:
+        del ACTIVE_SESSIONS[session_id]
+    response.delete_cookie("session_id")
+    return {"status": "success"}
+
+@app.get("/api/auth/status")
+async def get_auth_status(request: Request):
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
+
+@app.get("/login", response_class=HTMLResponse)
+def get_login_page(request: Request):
+    """Serves the login page, redirects to dashboard if already authenticated."""
+    user = get_session_user(request)
+    if user:
+        return RedirectResponse(url="/", status_code=303)
+        
+    login_path = Path(__file__).resolve().parent / "frontend" / "login.html"
+    if login_path.exists():
+        with open(login_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    return HTMLResponse(content="<h1>Login Page Error</h1><p>login.html template not found.</p>")
+
 # HTML Server
 @app.get("/", response_class=HTMLResponse)
-def get_dashboard_page():
+def get_dashboard_page(request: Request):
     """Serves the unified, premium dark-themed operator control dashboards."""
+    user = get_session_user(request)
+    if not user:
+        return RedirectResponse(url="/login", status_code=303)
+        
     dashboard_path = Path(__file__).resolve().parent / "frontend" / "index.html"
     if dashboard_path.exists():
         with open(dashboard_path, "r", encoding="utf-8") as f:

@@ -618,7 +618,7 @@
 <body>
 
     <!-- ═══ HEADER ═══ -->
-    <header class="header">
+    <header class="header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
         <div>
             <h1 style="font-size:18px; font-weight:700; color:#e5e7eb;">
                 Sand Mining Drone Surveillance
@@ -626,39 +626,53 @@
             <p style="font-size:11px; color:#6b7280; margin-top:2px;">Brahmaputra River Monitoring System</p>
         </div>
 
-        <!-- Status bar -->
-        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
-            <!-- Connection -->
-            <div class="chip">
-                <span>Status:</span>
-                <span id="connection-status"
-                    style="font-weight:700; color:#ef4444; display:flex; align-items:center; gap:4px;">
-                    <span class="dot dot-red"></span> Offline
-                </span>
-            </div>
-            <!-- Battery -->
-            <div class="chip">
-                <span>Battery:</span>
-                <div style="width:50px; height:6px; background:#374151; border-radius:3px; overflow:hidden;">
-                    <div id="battery-bar" style="height:100%; width:0%; background:#22c55e; transition:width 0.5s;">
-                    </div>
+        <!-- Right side: Status and Auth controls -->
+        <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;">
+            <!-- Operator profile and Logout -->
+            <div style="display:flex; gap:10px; align-items:center;">
+                <div class="chip" style="background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.15); color: #10b981; display: flex; align-items: center; gap: 6px;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.85;"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                    <span id="user-display">Operator</span>
                 </div>
-                <strong id="hud-battery">0%</strong>
+                <button id="btn-logout" class="map-btn" style="padding: 4px 10px; font-size: 11px; margin: 0; background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.3); color: #f87171; border-radius: 6px; cursor: pointer; font-family: inherit; font-weight: 600;">
+                    Logout
+                </button>
             </div>
-            <!-- Altitude -->
-            <div class="chip">
-                <span>Altitude:</span>
-                <strong id="hud-altitude" class="mono">0.0m</strong>
-            </div>
-            <!-- Speed -->
-            <div class="chip">
-                <span>Speed:</span>
-                <strong id="hud-speed" class="mono">0.0 km/h</strong>
-            </div>
-            <!-- Coordinates -->
-            <div class="chip">
-                <span>GPS:</span>
-                <strong id="hud-coordinates" class="mono" style="font-size:11px;">Waiting...</strong>
+            
+            <!-- Status bar -->
+            <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+                <!-- Connection -->
+                <div class="chip">
+                    <span>Status:</span>
+                    <span id="connection-status"
+                        style="font-weight:700; color:#ef4444; display:flex; align-items:center; gap:4px;">
+                        <span class="dot dot-red"></span> Offline
+                    </span>
+                </div>
+                <!-- Battery -->
+                <div class="chip">
+                    <span>Battery:</span>
+                    <div style="width:50px; height:6px; background:#374151; border-radius:3px; overflow:hidden;">
+                        <div id="battery-bar" style="height:100%; width:0%; background:#22c55e; transition:width 0.5s;">
+                        </div>
+                    </div>
+                    <strong id="hud-battery">0%</strong>
+                </div>
+                <!-- Altitude -->
+                <div class="chip">
+                    <span>Altitude:</span>
+                    <strong id="hud-altitude" class="mono">0.0m</strong>
+                </div>
+                <!-- Speed -->
+                <div class="chip">
+                    <span>Speed:</span>
+                    <strong id="hud-speed" class="mono">0.0 km/h</strong>
+                </div>
+                <!-- Coordinates -->
+                <div class="chip">
+                    <span>GPS:</span>
+                    <strong id="hud-coordinates" class="mono" style="font-size:11px;">Waiting...</strong>
+                </div>
             </div>
         </div>
     </header>
@@ -1636,7 +1650,47 @@
             });
         })();
 
-        // Initialize
+        // ── Authentication & Initialization ──────────────────────────────
+        function fetchUserStatus() {
+            fetch('/api/auth/status')
+                .then(response => {
+                    if (!response.ok) {
+                        // If not authenticated, redirect to login page immediately
+                        window.location.href = '/login';
+                        return;
+                    }
+                    return response.json();
+                })
+                .then(user => {
+                    if (user) {
+                        const userDisplay = document.getElementById('user-display');
+                        if (userDisplay) {
+                            // Capitalize username for professional display
+                            const displayUser = user.username.charAt(0).toUpperCase() + user.username.slice(1);
+                            const displayRole = user.role.charAt(0).toUpperCase() + user.role.slice(1);
+                            userDisplay.textContent = `${displayUser} (${displayRole})`;
+                        }
+                    }
+                })
+                .catch(err => {
+                    console.error('Failed to fetch user status:', err);
+                });
+        }
+
+        // Logout action
+        document.getElementById('btn-logout').addEventListener('click', function() {
+            fetch('/api/auth/logout', { method: 'POST' })
+                .then(() => {
+                    window.location.href = '/login';
+                })
+                .catch(err => {
+                    console.error('Logout failed:', err);
+                    window.location.href = '/login';
+                });
+        });
+
+        // Initialize dashboard and verify auth state
+        fetchUserStatus();
         connectWebSocket();
     </script>
 </body>

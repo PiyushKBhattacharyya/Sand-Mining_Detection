@@ -129,9 +129,21 @@ class DatabaseManager:
         );
         """
 
+        # 4. Create Users table
+        users_table = f"""
+        CREATE TABLE IF NOT EXISTS users (
+            id {serial_type},
+            username VARCHAR(100) UNIQUE NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
+            role VARCHAR(50) NOT NULL DEFAULT 'operator',
+            created_at {t_timestamptz} NOT NULL DEFAULT {now_default}
+        );
+        """
+
         cursor.execute(telemetry_table)
         cursor.execute(incidents_table)
         cursor.execute(detections_table)
+        cursor.execute(users_table)
 
         # ── DYNAMIC COLUMN SCHEMA MIGRATIONS ──────────────────────────────
         # WHAT: Dynamically append columns if database was pre-created before update.
@@ -151,14 +163,36 @@ class DatabaseManager:
                 conn.rollback()
                 logger.debug(f"Postgres migration check: {e}")
 
-        # 4. Create indexes for high-performance class filtering & real-time map spatial rendering
+        # Seed default admin user if users table is empty
+        cursor.execute("SELECT COUNT(*) FROM users;")
+        if cursor.fetchone()[0] == 0:
+            logger.info("Seeding default admin account (username: admin, password: SecureSandMining@2026)...")
+            import hashlib
+            import uuid
+            salt = uuid.uuid4().hex
+            hashed = hashlib.sha256((salt + "SecureSandMining@2026").encode('utf-8')).hexdigest()
+            password_hash = f"{salt}:{hashed}"
+            
+            if is_pg:
+                cursor.execute(
+                    "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s);",
+                    ("admin", password_hash, "admin")
+                )
+            else:
+                cursor.execute(
+                    "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?);",
+                    ("admin", password_hash, "admin")
+                )
+
+        # 5. Create indexes for high-performance class filtering & real-time map spatial rendering
         indexes = [
             "CREATE INDEX IF NOT EXISTS idx_telemetry_time ON telemetry_logs (timestamp);",
             "CREATE INDEX IF NOT EXISTS idx_detections_time ON detections (timestamp);",
             "CREATE INDEX IF NOT EXISTS idx_detections_class ON detections (class_name);",
             "CREATE INDEX IF NOT EXISTS idx_detections_incident ON detections (incident_id);",
             "CREATE INDEX IF NOT EXISTS idx_incidents_coords ON incidents (centroid_latitude, centroid_longitude);",
-            "CREATE INDEX IF NOT EXISTS idx_incidents_sync ON incidents (synced_to_cloud);"
+            "CREATE INDEX IF NOT EXISTS idx_incidents_sync ON incidents (synced_to_cloud);",
+            "CREATE INDEX IF NOT EXISTS idx_users_username ON users (username);"
         ]
 
         for idx in indexes:
