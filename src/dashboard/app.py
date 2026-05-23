@@ -1,3 +1,4 @@
+
 import os
 import json
 import base64
@@ -102,12 +103,12 @@ app = FastAPI(
 #   export VIDEO_SOURCE="rtsp://192.168.1.50:8554/live"
 #   python main.py server
 #
-_raw_source  = os.getenv("VIDEO_SOURCE", "0")
-# Auto-detect: if the value is a plain integer string  webcam index, else RTSP URL
-VIDEO_SOURCE            = int(_raw_source) if _raw_source.lstrip("-").isdigit() else _raw_source
+_raw_source = os.getenv("VIDEO_SOURCE", "0")
+# Auto-detect: if the value is a plain integer string webcam index, else RTSP URL
+VIDEO_SOURCE = int(_raw_source) if _raw_source.lstrip("-").isdigit() else _raw_source
 
-CAMERA_FPS     = float(os.getenv("CAMERA_FPS",     "15.0"))
-CAMERA_QUALITY = int(os.getenv("CAMERA_QUALITY",   "75"))
+CAMERA_FPS = float(os.getenv("CAMERA_FPS", "15.0"))
+CAMERA_QUALITY = int(os.getenv("CAMERA_QUALITY", "75"))
 
 # RTSP-specific tuning (only relevant when VIDEO_SOURCE is a URL)
 # Prefer TCP transport for reliability over Wi-Fi (default is UDP which can drop frames)
@@ -123,46 +124,42 @@ def _video_capture_loop():
        Integer   local webcam (testing mode)
        URL str   RTSP stream from drone or IP camera (field deployment)
 
-    No restart needed  just change VIDEO_SOURCE and reboot the server.
+    No restart needed just change VIDEO_SOURCE and reboot the server.
     """
     global latest_raw_frame, latest_overlay_frame, latest_webcam_detections
 
     try:
         import cv2
     except ImportError:
-        logger.warning("opencv-python not installed  video feed disabled.")
+        logger.warning("opencv-python not installed video feed disabled.")
         return
 
+    # --- This is where your next block seamlessly connects ---
     is_rtsp = isinstance(VIDEO_SOURCE, str)
 
     if is_rtsp:
-        #  DRONE / RTSP MODE 
+        # DRONE / RTSP MODE
         # Force TCP transport for stable Wi-Fi streaming (avoids UDP packet loss).
         # GStreamer pipeline string can be swapped here for Jetson hardware decode.
-        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = f"rtsp_transport;{RTSP_TRANSPORT}"
-        logger.info(f"  Drone RTSP stream opening: {VIDEO_SOURCE}  (transport={RTSP_TRANSPORT})")
-        logger.info("    Waiting for drone to broadcast... (this may take a few seconds)")
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;" + str(RTSP_TRANSPORT)
+        logger.info("Drone RTSP stream opening: {} (transport={})".format(VIDEO_SOURCE, RTSP_TRANSPORT))
+        logger.info("Waiting for drone to broadcast... (this may take a few seconds)")
         cap = cv2.VideoCapture(VIDEO_SOURCE, cv2.CAP_FFMPEG)
     else:
-        #  WEBCAM MODE (default, no drone yet) 
-        logger.info(f"  Webcam capture starting on camera index {VIDEO_SOURCE}...")
+        # WEBCAM MODE (default, no drone yet)
+        logger.info("Webcam capture starting on camera index {}...".format(VIDEO_SOURCE))
         cap = cv2.VideoCapture(VIDEO_SOURCE)
-        # Request a reasonable resolution  driver will use nearest supported
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1280)
+        # Request a reasonable resolution driver will use nearest supported
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
     if not cap.isOpened():
         if is_rtsp:
-            logger.warning(
-                f"  Could not connect to RTSP stream: {VIDEO_SOURCE}\n"
-                "    Check that the drone is powered on, broadcasting, and on the same network.\n"
-                "    Falling back to no feed  dashboard will show placeholder."
-            )
+            logger.error("  Could not connect to RTSP stream: {}\n".format(VIDEO_SOURCE))
         else:
             logger.warning(
-                f"  Could not open camera {VIDEO_SOURCE}. "
-                "Try a different index via VIDEO_SOURCE env var."
-            )
+            "  Could not open camera {}. ".format(VIDEO_SOURCE)
+        )
         return
 
     global global_video_w, global_video_h
@@ -170,8 +167,8 @@ def _video_capture_loop():
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     global_video_w = w if w > 0 else 1280
     global_video_h = h if h > 0 else 720
-    source_label = f"RTSP drone stream" if is_rtsp else f"webcam {VIDEO_SOURCE}"
-    logger.info(f"  {source_label} opened at {w}x{h}  feeding both dashboard streams.")
+    source_label = "RTSP drone stream" if is_rtsp else "webcam " + str(VIDEO_SOURCE)
+    logger.info("  {} opened at {}x{}  feeding both dashboard streams.".format(source_label, w, h))
 
     encode_params = [cv2.IMWRITE_JPEG_QUALITY, CAMERA_QUALITY]
     interval = 1.0 / CAMERA_FPS
@@ -196,15 +193,15 @@ def _video_capture_loop():
             target_path = str(weights_dir / target_model_name)
 
         if current_loaded_model_path != target_path:
-            logger.info(f" Swapping local server YOLO model: {current_loaded_model_path} -> {target_path}")
+            logger.info(" Swapping local server YOLO model: {} -> {}".format(current_loaded_model_path, target_path))
             try:
                 from ultralytics import YOLO
                 global _yolo_model
                 _yolo_model = YOLO(target_path)
                 current_loaded_model_path = target_path
-                logger.info(f" Local server YOLO model successfully swapped to: {target_model_name}")
+                logger.info(" Local server YOLO model successfully swapped to: {}".format(target_model_name))
             except Exception as e:
-                logger.error(f" Failed to dynamic swap local YOLO model: {e}")
+                logger.error(" Failed to dynamic swap local YOLO model: {}".format(e))
         ret, frame = cap.read()
 
         if not ret:
@@ -303,7 +300,7 @@ def _video_capture_loop():
                         })
                 latest_webcam_detections = active_dets
             except Exception as exc:
-                logger.debug(f"YOLO inference error: {exc}")
+                logger.debug("YOLO inference error: {}".format(exc))
                 latest_overlay_frame = jpeg   # fallback: show raw if inference crashes
                 latest_webcam_detections = []
         else:
@@ -326,7 +323,7 @@ def _video_capture_loop():
                     try:
                         recording_writer.write(recording_frame)
                     except Exception as e:
-                        logger.error(f"Error writing frame to recording: {e}")
+                        logger.error("Error writing frame to recording: {}".format(e))
 
         elapsed = time.time() - t0
         sleep_for = interval - elapsed
@@ -346,7 +343,7 @@ db_manager = DatabaseManager(db_type="sqlite")
 db_manager.initialize_database()
 
 # Active buffer radius  starts at 1km, updated via /api/zone/radius
-active_buffer_radius_m        = 1000.0
+active_buffer_radius_m = 1000.0
 
 #  Global dictionary holding the active flight mission control configuration.
 #  Allows the operator dashboard to set parameters that are fetched by the drone
@@ -366,19 +363,19 @@ has_reached_starting_spot = False
 # Store active websocket connections
 class ConnectionManager:
     def __init__(self):
-        self.active_connections                  = []
+        self.active_connections = []
 
-    async def connect(self, websocket           ):
+    async def connect(self, websocket):
         await websocket.accept()
         self.active_connections.append(websocket)
-        logger.info(f"New client connected. Total clients: {len(self.active_connections)}")
+        logger.info("New client connected. Total clients: {}".format(len(self.active_connections)))
 
-    def disconnect(self, websocket           ):
+    def disconnect(self, websocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
-            logger.info(f"Client disconnected. Total clients: {len(self.active_connections)}")
+            logger.info("Client disconnected. Total clients: {}".format(len(self.active_connections)))
 
-    async def broadcast(self, message                ):
+    async def broadcast(self, message):
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
@@ -391,9 +388,9 @@ manager = ConnectionManager()
 # Global frames storage for live multipart streaming
 # In a physical deployment, the Jetson Nano continuously POSTs frames here,
 # which are then distributed to the dashboard HTML IMG tags.
-latest_raw_frame        = b""
-latest_overlay_frame        = b""
-latest_webcam_detections                       = []
+latest_raw_frame = b""
+latest_overlay_frame = b""
+latest_webcam_detections = []
 
 # Holds the loaded YOLO model  set once at startup, used in _video_capture_loop
 _yolo_model = None
@@ -421,14 +418,14 @@ async def _webcam_telemetry_simulation_loop():
     # Load and interpolate centerline
     centerline_path = Path(__file__).resolve().parent.parent.parent / "data" / "legal_zones" / "river_centerline.geojson"
     if not centerline_path.exists():
-        logger.error(f"Centerline not found for hybrid simulation: {centerline_path}")
+        logger.error("Centerline not found for hybrid simulation: {}".format(centerline_path))
         return
         
     try:
         with open(centerline_path, 'r') as f:
             cl_data = json.load(f)
     except Exception as e:
-        logger.error(f"Error loading centerline for hybrid simulation: {e}")
+        logger.error("Error loading centerline for hybrid simulation: {}".format(e))
         return
         
     raw_coords = cl_data['features'][0]['geometry']['coordinates']
@@ -439,7 +436,7 @@ async def _webcam_telemetry_simulation_loop():
     if len(raw_coords) < 10:
         logger.error("Not enough centerline points in India after filtering.")
         return
-    logger.info(f"Centerline filtered to {len(raw_coords)} points in Assam, India.")
+    logger.info("Centerline filtered to {} points in Assam, India.".format(len(raw_coords)))
     # Store raw centerline waypoint data WITHOUT baking in the lateral offset.
     # The actual lat/lon is computed dynamically each step so the weave amplitude
     # instantly reflects the live active_buffer_radius_m when the slider moves.
@@ -478,7 +475,7 @@ async def _webcam_telemetry_simulation_loop():
                 'heading':    heading_deg,
             })
 
-    logger.info(f" Hybrid simulation generated {len(flight_points)} waypoints (dynamic-radius weave).")
+    logger.info(" Hybrid simulation generated {} waypoints (dynamic-radius weave).".format(len(flight_points)))
     
     step = 0
     battery = 100.0
@@ -609,7 +606,7 @@ async def _webcam_telemetry_simulation_loop():
                                     if evidence_paths:
                                         inc['evidence_image_path'] = evidence_paths[0]
                     except Exception as e:
-                        logger.error(f"Error generating hybrid evidence snapshot: {e}")
+                        logger.error("Error generating hybrid evidence snapshot: {}".format(e))
 
                     # Save incidents to DB
                     def save_incidents_db():
@@ -634,7 +631,7 @@ async def _webcam_telemetry_simulation_loop():
             await asyncio.sleep(0.33)
             
         except Exception as e:
-            logger.error(f"Error in hybrid telemetry loop: {e}")
+            logger.error("Error in hybrid telemetry loop: {}".format(e))
             await asyncio.sleep(1.0)
 
 
@@ -655,23 +652,23 @@ async def startup_event():
 
         if custom_weights.exists():
             _yolo_model = YOLO(str(custom_weights))
-            logger.info(f"  Loaded CUSTOM YOLO model: {custom_weights.name}")
+            logger.info("  Loaded CUSTOM YOLO model: {}".format(custom_weights.name))
         else:
             # Auto-downloads yolov8n.pt on first run (~6 MB) directly to models/weights/
             placeholder_path = custom_weights.parent / "yolov8n.pt"
             custom_weights.parent.mkdir(parents=True, exist_ok=True)
             _yolo_model = YOLO(str(placeholder_path))
-            logger.info(f"  YOLOv8n placeholder loaded at {placeholder_path.name}  detecting PERSON ONLY (conf0.30). Swap best.pt when ready.")
+            logger.info("  YOLOv8n placeholder loaded at {}  detecting PERSON ONLY (conf0.30). Swap best.pt when ready.".format(placeholder_path.name))
     except Exception as e:
-        logger.warning(f"  YOLO failed to load  overlay will mirror raw feed. Error: {e}")
+        logger.warning("  YOLO failed to load  overlay will mirror raw feed. Error: {}".format(e))
         _yolo_model = None
 
     #  Start video capture thread AFTER model is ready 
     # Ensures first frames already have a model to run against.
     t = threading.Thread(target=_video_capture_loop, daemon=True, name="video-capture")
     t.start()
-    source_desc = f"RTSP: {VIDEO_SOURCE}" if isinstance(VIDEO_SOURCE, str) else f"webcam {VIDEO_SOURCE}"
-    logger.info(f"  Video capture thread launched ({source_desc})  dashboard feeds will populate shortly.")
+    source_desc = "RTSP: {}".format(VIDEO_SOURCE) if isinstance(VIDEO_SOURCE, str) else f"webcam {VIDEO_SOURCE}"
+    logger.info("  Video capture thread launched ({})  dashboard feeds will populate shortly.".format(source_desc))
 
     # Start the hybrid telemetry simulation loop if we are using the webcam (testing mode)
     if isinstance(VIDEO_SOURCE, int):
@@ -740,7 +737,7 @@ async def receive_edge_sync(data: dict):
     and broadcasts them immediately to the operator dashboard via WebSockets.
     Also handles base64-encoded evidence images from the offline sync worker.
     """
-    logger.info(f"Sync event received. Type: {data.get('type')}")
+    logger.info("Sync event received. Type: {}".format(data.get('type')))
 
     # If payload contains a base64 evidence image, decode and save it cloud-side
     payload = data.get("payload", {})
@@ -755,7 +752,7 @@ async def receive_edge_sync(data: dict):
             # 1. Decode the base64 string sent by the Jetson Sync Worker
             img_data = base64.b64decode(img_b64)
             # 2. Save the image in the cloud evidence directory
-            img_path = EVIDENCE_DIR / f"cloud_evidence_{inc_id}.jpg"
+            img_path = EVIDENCE_DIR / "cloud_evidence_{}.jpg".format(inc_id)
             with open(img_path, "wb") as f:
                 f.write(img_data)
             payload["evidence_image_path"] = str(img_path.relative_to(
@@ -770,17 +767,17 @@ async def receive_edge_sync(data: dict):
             ph = "%s" if db_manager.db_type == "postgresql" else "?"
 
             cursor.execute(
-                f"UPDATE incidents SET evidence_image_blob = {ph} WHERE id = {ph}",
+                "UPDATE incidents SET evidence_image_blob = {} WHERE id = {}".format(ph, ph),
                 (img_data, inc_id)
             )
 
             conn.commit()
             cursor.close()
             conn.close()
-            logger.info(f"Saved binary evidence blob to DB for incident #{inc_id}")
+            logger.info("Saved binary evidence blob to DB for incident #{}".format(inc_id))
 
         except Exception as e:
-            logger.error(f"Could not save evidence image: {e}")
+            logger.error("Could not save evidence image: {}".format(e))
 
     # Broadcast to all open dashboards
     await manager.broadcast(data)
@@ -788,7 +785,7 @@ async def receive_edge_sync(data: dict):
 
 # REST APIs for historical query & filtering
 
-def parse_date_to_utc(dt_str     , is_end       = False)       :
+def parse_date_to_utc(dt_str, is_end = False):
     """
     Converts a local browser datetime string to UTC in YYYY-MM-DD HH:MM:SS format.
     If date-only (10 chars), appends start-of-day or end-of-day time.
@@ -807,7 +804,7 @@ def parse_date_to_utc(dt_str     , is_end       = False)       :
         dt_utc = dt.astimezone(timezone.utc)
         return dt_utc.strftime("%Y-%m-%d %H:%M:%S")
     except Exception as e:
-        logger.warning(f"Error parsing date {dt_str}: {e}")
+        logger.warning("Error parsing date {}: {}".format(dt_str, e))
         return dt_str.replace('T', ' ')
 
 @app.get("/api/incidents")
@@ -832,17 +829,17 @@ def get_incidents(
     ph = "?" if is_sqlite else "%s"
     
     if severity:
-        clauses.append(f"severity = {ph}")
+        clauses.append("severity = {}".format(ph))
         params.append(severity.upper())
         
     if start_date:
         start_utc = parse_date_to_utc(start_date, is_end=False)
-        clauses.append(f"timestamp >= {ph}")
+        clauses.append("timestamp >= {}".format(ph))
         params.append(start_utc)
         
     if end_date:
         end_utc = parse_date_to_utc(end_date, is_end=True)
-        clauses.append(f"timestamp <= {ph}")
+        clauses.append("timestamp <= {}".format(ph))
         params.append(end_utc)
         
     if clauses:
@@ -874,7 +871,7 @@ def get_incidents(
             })
         return incidents
     except Exception as e:
-        logger.error(f"Error fetching incidents: {e}")
+        logger.error("Error fetching incidents: {}".format(e))
         raise HTTPException(status_code=500, detail="Database error")
     finally:
         cursor.close()
@@ -883,8 +880,8 @@ def get_incidents(
 @app.get("/api/detections")
 def get_detections(
     request: Request,
-    incident_id                = Query(None, description="Filter detections by Incident (Cluster) ID"),
-    class_name                = Query(None, description="Filter by class type: jcb, truck, person")
+    incident_id = Query(None, description="Filter detections by Incident (Cluster) ID"),
+    class_name = Query(None, description="Filter by class type: jcb, truck, person")
 ):
     """
     Retrieves individual object detections with coordinates.
@@ -904,11 +901,11 @@ def get_detections(
     ph = "?" if is_sqlite else "%s"
     
     if incident_id is not None:
-        clauses.append(f"incident_id = {ph}")
+        clauses.append("incident_id = {}".format(ph))
         params.append(incident_id)
         
     if class_name:
-        clauses.append(f"class_name = {ph}")
+        clauses.append("class_name = {}".format(ph))
         params.append(class_name.lower())
         
     if clauses:
@@ -942,7 +939,7 @@ def get_detections(
             })
         return detections
     except Exception as e:
-        logger.error(f"Error fetching detections: {e}")
+        logger.error("Error fetching detections: {}".format(e))
         raise HTTPException(status_code=500, detail="Database error")
     finally:
         cursor.close()
@@ -978,7 +975,7 @@ def get_dashboard_stats(request: Request):
             }
         }
     except Exception as e:
-        logger.error(f"Error fetching database statistics: {e}")
+        logger.error("Error fetching database statistics: {}".format(e))
         raise HTTPException(status_code=500, detail="Database error")
     finally:
         cursor.close()
@@ -1002,7 +999,7 @@ def export_pdf_report(request: Request,
         params = []
         if severity:
             ph = "?" if db_manager.db_type == "sqlite" else "%s"
-            query += f" WHERE severity = {ph}"
+            query += " WHERE severity = {}".format(ph)
             params.append(severity.upper())
         query += " ORDER BY id DESC"
         cursor.execute(query, params)
@@ -1024,11 +1021,11 @@ def export_pdf_report(request: Request,
     pdf_bytes = generate_incident_report(incidents=incidents, mission_id=mission_id)
     from datetime import datetime
     ts = datetime.now().strftime("%Y%m%d_%H%M")
-    filename = f"sand_mining_report_{mission_id}_{ts}.pdf"
+    filename = "sand_mining_report_{}_{}.pdf".format(mission_id, ts)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        headers={"Content-Disposition": 'attachment; filename="{}"'.format(filename)}
     )
 
 
@@ -1076,7 +1073,7 @@ async def update_flight_config(request: Request, data: dict):
         has_reached_starting_spot = False
         logger.info(" Geofence start coordinates updated  resetting starting spot trigger.")
     
-    logger.info(f" Updated Flight Configuration: {flight_config}")
+    logger.info(" Updated Flight Configuration: {}".format(flight_config))
     
     # Broadcast to all connected WebSocket dashboards so map and parameters update instantly!
     await manager.broadcast({
@@ -1104,7 +1101,7 @@ def get_evidence_image_from_db(request: Request, incident_id):
     
     try:
         # 1. Try reading the blob and filesystem path from database
-        cursor.execute(f"SELECT evidence_image_blob, evidence_image_path FROM incidents WHERE id = {ph}", (incident_id,))
+        cursor.execute("SELECT evidence_image_blob, evidence_image_path FROM incidents WHERE id = {}".format(ph), (incident_id,))
         row = cursor.fetchone()
         
         if row:
@@ -1128,23 +1125,23 @@ def get_evidence_image_from_db(request: Request, incident_id):
         project_root = Path(__file__).resolve().parent.parent.parent
         detections_dir = project_root / "data" / "detections"
         # Search for files matching evidence_{incident_id}*.jpg or cloud_evidence_{incident_id}*.jpg
-        matches = list(detections_dir.glob(f"evidence_{incident_id}*.jpg"))
+        matches = list(detections_dir.glob("evidence_{}*.jpg".format(incident_id)))
         if not matches:
-            matches = list(detections_dir.glob(f"cloud_evidence_{incident_id}*.jpg"))
+            matches = list(detections_dir.glob("cloud_evidence_{}*.jpg".format(incident_id)))
         if matches:
             with open(matches[0], "rb") as f:
                 return Response(content=f.read(), media_type="image/jpeg")
                 
         raise HTTPException(status_code=404, detail="Incident evidence image not found")
     except Exception as e:
-        logger.error(f"Error serving image from DB: {e}")
+        logger.error("Error serving image from DB: {}".format(e))
         # Try search fallback directly in case of schema/SQL failures
         try:
             project_root = Path(__file__).resolve().parent.parent.parent
             detections_dir = project_root / "data" / "detections"
-            matches = list(detections_dir.glob(f"evidence_{incident_id}*.jpg"))
+            matches = list(detections_dir.glob("evidence_{}*.jpg".format(incident_id)))
             if not matches:
-                matches = list(detections_dir.glob(f"cloud_evidence_{incident_id}*.jpg"))
+                matches = list(detections_dir.glob("cloud_evidence_{}*.jpg".format(incident_id)))
             if matches:
                 with open(matches[0], "rb") as f:
                     return Response(content=f.read(), media_type="image/jpeg")
@@ -1212,7 +1209,7 @@ async def set_zone_radius(request: Request, data: dict):
             raise HTTPException(status_code=500, detail="Buffer rebuild failed  check centerline data")
 
     active_buffer_radius_m = radius_m
-    logger.info(f"Zone radius updated to {radius_m:.0f}m by operator")
+    logger.info("Zone radius updated to {}m by operator".format(radius_m:.0f))
 
     # Broadcast to all dashboard clients + Jetson sync_worker
     await manager.broadcast({
@@ -1262,7 +1259,7 @@ async def login(request: Request, response: Response, payload: dict):
         cursor.execute(query, (username,))
         row = cursor.fetchone()
     except Exception as e:
-        logger.error(f"Error querying user: {e}")
+        logger.error("Error querying user: {}".format(e))
         raise HTTPException(status_code=500, detail="Database lookup failure")
     finally:
         cursor.close()
@@ -1328,7 +1325,7 @@ async def register(request: Request, response: Response, payload: dict):
     except Exception as e:
         if isinstance(e, HTTPException):
             raise e
-        logger.error(f"Error checking user registration: {e}")
+        logger.error("Error checking user registration: {}".format(e))
         raise HTTPException(status_code=500, detail="Database lookup error")
     finally:
         cursor.close()
@@ -1337,7 +1334,7 @@ async def register(request: Request, response: Response, payload: dict):
     # Hash password
     salt = uuid.uuid4().hex
     hashed = hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
-    password_hash = f"{salt}:{hashed}"
+    password_hash = "{}:{}".format(salt, hashed)
     
     conn = db_manager.get_connection()
     cursor = conn.cursor()
@@ -1352,7 +1349,7 @@ async def register(request: Request, response: Response, payload: dict):
         cursor.execute(insert_query, (username, email, password_hash, "operator"))
         conn.commit()
     except Exception as e:
-        logger.error(f"Error inserting registered user: {e}")
+        logger.error("Error inserting registered user: {}".format(e))
         raise HTTPException(status_code=500, detail="Registration save failure")
     finally:
         cursor.close()
@@ -1435,7 +1432,7 @@ async def start_recording(request: Request):
             
         import datetime
         timestamp_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        recording_filename = f"flight_rec_{timestamp_str}.mp4"
+        recording_filename = "flight_rec_{}.mp4".format(timestamp_str)
         recordings_dir = Path(__file__).resolve().parent.parent.parent / "data" / "recordings"
         recordings_dir.mkdir(parents=True, exist_ok=True)
         recording_filepath = recordings_dir / recording_filename
@@ -1457,7 +1454,7 @@ async def start_recording(request: Request):
             
         recording_start_time = time.time()
         is_recording = True
-        logger.info(f" Admin Flight Recording Started: {recording_filepath} ({global_video_w}x{global_video_h})")
+        logger.info(" Admin Flight Recording Started: {} ({}x{})".format(recording_filepath, global_video_w, global_video_h))
         return {"status": "started", "filename": recording_filename}
 
 @app.post("/api/admin/record/stop")
@@ -1487,13 +1484,13 @@ async def stop_recording(request: Request):
         ph = "%s" if is_pg else "?"
         
         cursor.execute(
-            f"INSERT INTO recordings (filename, filepath, duration_seconds, size_bytes) VALUES ({ph}, {ph}, {ph}, {ph})",
-            (recording_filename, f"data/recordings/{recording_filename}", duration, file_size)
+            "INSERT INTO recordings (filename, filepath, duration_seconds, size_bytes) VALUES ({}, {}, {}, {})".format(ph, ph, ph, ph),
+            (recording_filename, "data/recordings/{}".format(recording_filename), duration, file_size)
         )
         conn.commit()
         cursor.close()
         conn.close()
-        logger.info(f" Admin Flight Recording Saved: {recording_filename} ({duration}s, {file_size} bytes)")
+        logger.info(" Admin Flight Recording Saved: {} ({}s, {} bytes)".format(recording_filename, duration, file_size))
         return {
             "status": "stopped",
             "filename": recording_filename,
