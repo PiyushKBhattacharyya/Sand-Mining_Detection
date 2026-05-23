@@ -38,13 +38,15 @@ from pdf_generator import generate_incident_report
 from zone_builder import build_buffer
 
 # Salting and SHA-256 Hashing helper functions for secure authentication
-def hash_password(password: str, salt: str = None) -> str:
+def hash_password(password, salt=None):
     if not salt:
         salt = uuid.uuid4().hex
-    hashed = hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
-    return f"{salt}:{hashed}"
+    # Use standard encoding and concatenation to bypass hidden character bugs
+    combined = (str(salt) + str(password)).encode('utf-8')
+    hashed = hashlib.sha256(combined).hexdigest()
+    return str(salt) + ":" + str(hashed)
 
-def verify_password(password: str, stored_password_hash: str) -> bool:
+def verify_password(password, stored_password_hash):
     try:
         salt, hashed = stored_password_hash.split(":")
         check_hash = hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
@@ -53,9 +55,9 @@ def verify_password(password: str, stored_password_hash: str) -> bool:
         return False
 
 # In-memory session store
-ACTIVE_SESSIONS: Dict[str, Dict[str, str]] = {}
+ACTIVE_SESSIONS = {}
 
-def get_session_user(request: Request) -> Optional[Dict[str, str]]:
+def get_session_user(request):
     session_id = request.cookies.get("session_id")
     if session_id and session_id in ACTIVE_SESSIONS:
         return ACTIVE_SESSIONS[session_id]
@@ -102,7 +104,7 @@ app = FastAPI(
 #
 _raw_source  = os.getenv("VIDEO_SOURCE", "0")
 # Auto-detect: if the value is a plain integer string  webcam index, else RTSP URL
-VIDEO_SOURCE: int | str = int(_raw_source) if _raw_source.lstrip("-").isdigit() else _raw_source
+VIDEO_SOURCE            = int(_raw_source) if _raw_source.lstrip("-").isdigit() else _raw_source
 
 CAMERA_FPS     = float(os.getenv("CAMERA_FPS",     "15.0"))
 CAMERA_QUALITY = int(os.getenv("CAMERA_QUALITY",   "75"))
@@ -224,7 +226,7 @@ def _video_capture_loop():
         latest_raw_frame = jpeg
 
         # Calculate distance to see if drone has reached the Detection Starting Spot
-        def is_at_starting_spot() -> bool:
+        def is_at_starting_spot()        :
             global has_reached_starting_spot
 
             target_lat = flight_config.get("start_lat", 0.0)
@@ -258,7 +260,7 @@ def _video_capture_loop():
 
             return has_reached_starting_spot
 
-        def is_inside_fence() -> bool:
+        def is_inside_fence()        :
             global global_cluster_engine
             if global_cluster_engine is None:
                 return True  # Fallback if engine is initializing
@@ -344,7 +346,7 @@ db_manager = DatabaseManager(db_type="sqlite")
 db_manager.initialize_database()
 
 # Active buffer radius  starts at 1km, updated via /api/zone/radius
-active_buffer_radius_m: float = 1000.0
+active_buffer_radius_m        = 1000.0
 
 #  Global dictionary holding the active flight mission control configuration.
 #  Allows the operator dashboard to set parameters that are fetched by the drone
@@ -364,19 +366,19 @@ has_reached_starting_spot = False
 # Store active websocket connections
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: List[WebSocket] = []
+        self.active_connections                  = []
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket           ):
         await websocket.accept()
         self.active_connections.append(websocket)
         logger.info(f"New client connected. Total clients: {len(self.active_connections)}")
 
-    def disconnect(self, websocket: WebSocket):
+    def disconnect(self, websocket           ):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
             logger.info(f"Client disconnected. Total clients: {len(self.active_connections)}")
 
-    async def broadcast(self, message: Dict[str, Any]):
+    async def broadcast(self, message                ):
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
@@ -389,9 +391,9 @@ manager = ConnectionManager()
 # Global frames storage for live multipart streaming
 # In a physical deployment, the Jetson Nano continuously POSTs frames here,
 # which are then distributed to the dashboard HTML IMG tags.
-latest_raw_frame: bytes = b""
-latest_overlay_frame: bytes = b""
-latest_webcam_detections: List[Dict[str, Any]] = []
+latest_raw_frame        = b""
+latest_overlay_frame        = b""
+latest_webcam_detections                       = []
 
 # Holds the loaded YOLO model  set once at startup, used in _video_capture_loop
 _yolo_model = None
@@ -677,7 +679,7 @@ async def startup_event():
         logger.info(" Launched dynamic hybrid flight telemetry simulator background task.")
 
 # Frame generator for multipart MJPEG streaming
-async def frame_generator(stream_type: str):
+async def frame_generator(stream_type     ):
     global latest_raw_frame, latest_overlay_frame
     
     # 1. Fallback dummy frame if no feed is active
@@ -697,7 +699,7 @@ async def frame_generator(stream_type: str):
 
 # Live Video Endpoints (multipart MJPEG)
 @app.get("/stream/raw")
-async def stream_raw(request: Request):
+async def stream_raw(request         ):
     """Serves the raw video feed from the DJI drone camera."""
     user = get_session_user(request)
     if not user:
@@ -708,7 +710,7 @@ async def stream_raw(request: Request):
     )
 
 @app.get("/stream/overlay")
-async def stream_overlay(request: Request):
+async def stream_overlay(request         ):
     """Serves the real-time AI bounding box overlay video feed."""
     user = get_session_user(request)
     if not user:
@@ -720,7 +722,7 @@ async def stream_overlay(request: Request):
 
 # Edge Frame Receiver Endpoint
 @app.post("/api/edge/frame")
-async def receive_edge_frame(stream_type: str, request: Request):
+async def receive_edge_frame(stream_type     , request         ):
     """Receives compressed JPEG frames uploaded by the Edge Jetson Nano."""
     global latest_raw_frame, latest_overlay_frame
     frame_data = await request.body()
@@ -732,7 +734,7 @@ async def receive_edge_frame(stream_type: str, request: Request):
 
 # Edge Telemetry & Event Sync Endpoint
 @app.post("/api/edge/sync")
-async def receive_edge_sync(data: Dict[str, Any]):
+async def receive_edge_sync(data                ):
     """
     Receives real-time telemetry logs, detections, and alerts from the Jetson Nano
     and broadcasts them immediately to the operator dashboard via WebSockets.
@@ -786,7 +788,7 @@ async def receive_edge_sync(data: Dict[str, Any]):
 
 # REST APIs for historical query & filtering
 
-def parse_date_to_utc(dt_str: str, is_end: bool = False) -> str:
+def parse_date_to_utc(dt_str     , is_end       = False)       :
     """
     Converts a local browser datetime string to UTC in YYYY-MM-DD HH:MM:SS format.
     If date-only (10 chars), appends start-of-day or end-of-day time.
@@ -810,10 +812,10 @@ def parse_date_to_utc(dt_str: str, is_end: bool = False) -> str:
 
 @app.get("/api/incidents")
 def get_incidents(
-    request: Request,
-    severity: Optional[str] = Query(None, description="Filter by severity: EXTREME, SEVERE, MEDIUM, LOW"),
-    start_date: Optional[str] = Query(None, description="Filter by start date/time (local timezone)"),
-    end_date: Optional[str] = Query(None, description="Filter by end date/time (local timezone)")
+    request         ,
+    severity                = Query(None, description="Filter by severity: EXTREME, SEVERE, MEDIUM, LOW"),
+    start_date                = Query(None, description="Filter by start date/time (local timezone)"),
+    end_date                = Query(None, description="Filter by end date/time (local timezone)")
 ):
     """Retrieves list of all historic clusters/incidents with optional filtering."""
     user = get_session_user(request)
@@ -880,9 +882,9 @@ def get_incidents(
 
 @app.get("/api/detections")
 def get_detections(
-    request: Request,
-    incident_id: Optional[int] = Query(None, description="Filter detections by Incident (Cluster) ID"),
-    class_name: Optional[str] = Query(None, description="Filter by class type: jcb, truck, person")
+    request         ,
+    incident_id                = Query(None, description="Filter detections by Incident (Cluster) ID"),
+    class_name                = Query(None, description="Filter by class type: jcb, truck, person")
 ):
     """
     Retrieves individual object detections with coordinates.
@@ -947,7 +949,7 @@ def get_detections(
         conn.close()
 
 @app.get("/api/stats")
-def get_dashboard_stats(request: Request):
+def get_dashboard_stats(request         ):
     """Retrieves aggregate telemetry and spatial count metrics for the widgets."""
     user = get_session_user(request)
     if not user:
@@ -983,9 +985,9 @@ def get_dashboard_stats(request: Request):
         conn.close()
 
 @app.get("/api/report/pdf")
-def export_pdf_report(request: Request,
-                      severity: Optional[str] = Query(None, description="Filter by severity"),
-                      mission_id: str = Query("BRH-01", description="Mission identifier")):
+def export_pdf_report(request         ,
+                      severity                = Query(None, description="Filter by severity"),
+                      mission_id      = Query("BRH-01", description="Mission identifier")):
     """
     Generates and streams a PDF incident report.
     Includes incident table, evidence gallery, and GPS coordinate appendix.
@@ -1032,7 +1034,7 @@ def export_pdf_report(request: Request,
 
 #  FLIGHT CONTROL APIS (MID-FLIGHT SWITCHING & DYNAMIC GEOFENCING) 
 @app.get("/api/flight/config")
-def get_flight_config(request: Request):
+def get_flight_config(request         ):
     """
     WHAT: REST endpoint returning active flight mission control config.
     WHY: Checked periodically by the drone edge pipeline to load the correct
@@ -1045,7 +1047,7 @@ def get_flight_config(request: Request):
 
 
 @app.post("/api/flight/config")
-async def update_flight_config(request: Request, data: Dict[str, Any]):
+async def update_flight_config(request         , data                ):
     """
     WHAT: Endpoint to update active model and geofencing coordinates.
     WHY: Operators can switch YOLOv8 vs YOLOv10 mid-flight or adjust the trigger geofence!
@@ -1086,7 +1088,7 @@ async def update_flight_config(request: Request, data: Dict[str, Any]):
 
 #  POSTGRES VPS DIRECT IMAGE RETRIEVAL API 
 @app.get("/api/evidence/db/{incident_id}")
-def get_evidence_image_from_db(request: Request, incident_id: int):
+def get_evidence_image_from_db(request         , incident_id     ):
     """
     WHAT: Retrieves binary JPEG data directly from PostgreSQL / SQLite blob storage.
     WHY: Allows serving evidence snapshots to the frontend HTML direct from the DB
@@ -1155,7 +1157,7 @@ def get_evidence_image_from_db(request: Request, incident_id: int):
         conn.close()
 
 @app.get("/api/evidence/{filename}")
-def get_evidence_image(request: Request, filename: str):
+def get_evidence_image(request         , filename     ):
     """Serves a specific evidence JPEG image by filename."""
     user = get_session_user(request)
     if not user:
@@ -1168,7 +1170,7 @@ def get_evidence_image(request: Request, filename: str):
 
 
 @app.get("/api/zone/radius")
-def get_zone_radius(request: Request):
+def get_zone_radius(request         ):
     """Returns the currently active buffer radius in metres."""
     user = get_session_user(request)
     if not user:
@@ -1177,7 +1179,7 @@ def get_zone_radius(request: Request):
 
 
 @app.post("/api/zone/radius")
-async def set_zone_radius(request: Request, data: Dict[str, Any]):
+async def set_zone_radius(request         , data                ):
     """
     Updates the active zone enforcement radius.
     1. Rebuilds river_buffer_1km.geojson with the new radius (server-side)
@@ -1224,7 +1226,7 @@ async def set_zone_radius(request: Request, data: Dict[str, Any]):
 # WebSocket endpoint
 # WebSocket endpoint
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket           ):
     # Extract session_id from cookie to verify connection
     session_id = websocket.cookies.get("session_id")
     if not session_id or session_id not in ACTIVE_SESSIONS:
@@ -1243,7 +1245,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 # Auth API Endpoints
 @app.post("/api/auth/login")
-async def login(request: Request, response: Response, payload: Dict[str, str]):
+async def login(request         , response          , payload                ):
     username = payload.get("username")
     password = payload.get("password")
     
@@ -1292,7 +1294,7 @@ async def login(request: Request, response: Response, payload: Dict[str, str]):
 ALLOWED_EMAIL_DOMAINS = [".gov", ".gov.in", ".edu", ".edu.in", ".ac.in", ".org", "gmail.com"]
 
 @app.post("/api/auth/register")
-async def register(request: Request, response: Response, payload: Dict[str, str]):
+async def register(request         , response          , payload                ):
     username = payload.get("username", "").strip()
     email = payload.get("email", "").strip().lower()
     password = payload.get("password", "")
@@ -1375,7 +1377,7 @@ async def register(request: Request, response: Response, payload: Dict[str, str]
     return {"status": "success", "username": username, "role": "operator"}
 
 @app.post("/api/auth/logout")
-async def logout(request: Request, response: Response):
+async def logout(request         , response          ):
     session_id = request.cookies.get("session_id")
     if session_id in ACTIVE_SESSIONS:
         del ACTIVE_SESSIONS[session_id]
@@ -1383,14 +1385,14 @@ async def logout(request: Request, response: Response):
     return {"status": "success"}
 
 @app.get("/api/auth/status")
-async def get_auth_status(request: Request):
+async def get_auth_status(request         ):
     user = get_session_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
     return user
 
 @app.get("/login", response_class=HTMLResponse)
-def get_login_page(request: Request):
+def get_login_page(request         ):
     """Serves the login page, redirects to dashboard if already authenticated."""
     user = get_session_user(request)
     if user:
@@ -1404,7 +1406,7 @@ def get_login_page(request: Request):
 
 # HTML Server
 @app.get("/", response_class=HTMLResponse)
-def get_dashboard_page(request: Request):
+def get_dashboard_page(request         ):
     """Serves the unified, premium dark-themed operator control dashboards."""
     user = get_session_user(request)
     if not user:
@@ -1420,7 +1422,7 @@ def get_dashboard_page(request: Request):
 
 # Admin Flight Recording Endpoints
 @app.post("/api/admin/record/start")
-async def start_recording(request: Request):
+async def start_recording(request         ):
     user = get_session_user(request)
     if not user or user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Forbidden: Admin privilege required.")
@@ -1452,7 +1454,7 @@ async def start_recording(request: Request):
         return {"status": "started", "filename": recording_filename}
 
 @app.post("/api/admin/record/stop")
-async def stop_recording(request: Request):
+async def stop_recording(request         ):
     user = get_session_user(request)
     if not user or user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Forbidden: Admin privilege required.")
@@ -1493,7 +1495,7 @@ async def stop_recording(request: Request):
         }
 
 @app.get("/api/admin/recordings")
-async def list_recordings(request: Request):
+async def list_recordings(request         ):
     user = get_session_user(request)
     if not user or user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Forbidden: Admin privilege required.")

@@ -13,7 +13,7 @@ from typing import List, Dict, Any, Optional
 from io import BytesIO
 
 from fpdf import FPDF, XPos, YPos
-from fpdf.enums import TableCellFillMode
+# from fpdf.enums import TableCellFillMode
 
 logger = logging.getLogger(__name__)
 
