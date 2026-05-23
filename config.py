@@ -12,6 +12,19 @@ Set via environment variables or a .env file on each machine.
 import os
 from pathlib import Path
 
+# Load .env file manually if it exists at the project root
+project_root = Path(__file__).resolve().parent
+_env_path = project_root / ".env"
+if _env_path.exists():
+    with open(_env_path, "r", encoding="utf-8") as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _v = _line.split("=", 1)
+                # Strip quotes if present
+                _v_str = _v.strip().strip("'\"")
+                os.environ[_k.strip()] = _v_str
+
 #  Deployment mode 
 # "simulation" | "jetson" | "cloud"
 DEPLOY_MODE = os.getenv("DEPLOY_MODE", "simulation")
