@@ -499,5 +499,11 @@ class EdgePipeline:
             logger.info("Edge Pipeline shut down successfully.")
 
 if __name__ == "__main__":
-    pipeline = EdgePipeline(cloud_url="http://localhost:8000")
+    try:
+        sys.path.insert(0, str(project_root))
+        from config import CLOUD_URL
+    except ImportError:
+        CLOUD_URL = os.getenv("CLOUD_URL", "http://localhost:8000")
+        
+    pipeline = EdgePipeline(cloud_url=CLOUD_URL)
     pipeline.run_pipeline(steps=120)
