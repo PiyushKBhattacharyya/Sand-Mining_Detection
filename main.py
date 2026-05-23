@@ -13,7 +13,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 project_root = Path(__file__).resolve().parent
+# Detect virtual environment path (Windows 'Scripts/python.exe' or Linux/macOS 'bin/python')
 venv_python = project_root / ".venv" / "Scripts" / "python.exe"
+if not venv_python.exists():
+    venv_python = project_root / ".venv" / "bin" / "python"
 
 if not venv_python.exists():
     # Fallback to standard python if venv isn't in expected location
