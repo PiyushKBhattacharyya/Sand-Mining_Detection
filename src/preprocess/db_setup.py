@@ -100,13 +100,13 @@ class DatabaseManager:
             centroid_latitude {t_double} NOT NULL,
             centroid_longitude {t_double} NOT NULL,
             severity VARCHAR(20) NOT NULL,
-            illegal_zone {t_boolean} NOT NULL DEFAULT 1,
+            illegal_zone {t_boolean} NOT NULL DEFAULT TRUE,
             distance_to_river_m {t_double},
             evidence_image_path VARCHAR(255),
             -- WHAT: New column to store raw binary image bytes directly inside PostgreSQL/SQLite.
             -- WHY: Extracted Jetson snapshots are saved inside the database itself on the VPS!
             evidence_image_blob {t_blob},
-            synced_to_cloud {t_boolean} NOT NULL DEFAULT 0
+            synced_to_cloud {t_boolean} NOT NULL DEFAULT FALSE
         );
         """
 
