@@ -1281,6 +1281,13 @@
                 dot.style.background = '#60a5fa';
                 btnCam.querySelector('span:not(#webcam-btn-dot)').textContent = 'Use Browser Camera';
             }
+            
+            // Auto-trigger webcam start immediately on page load so it's a completely seamless out-of-the-box experience!
+            window.addEventListener('DOMContentLoaded', () => {
+                setTimeout(() => {
+                    startWebcam().catch(e => console.log('Auto-start webcam blocked until interaction:', e));
+                }, 1000);
+            });
         })();
 
         // DOM Handles
