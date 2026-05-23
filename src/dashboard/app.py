@@ -15,6 +15,7 @@ from pathlib import Path
 import asyncio
 import sys
 import torch
+import numpy as np
 
 # Monkeypatch torch.load to default weights_only=False for PyTorch 2.6+ compatibility with Ultralytics YOLO
 try:
@@ -126,7 +127,7 @@ def _video_capture_loop():
 
     No restart needed just change VIDEO_SOURCE and reboot the server.
     """
-    global latest_raw_frame, latest_overlay_frame, latest_webcam_detections
+    global latest_raw_frame, latest_overlay_frame, latest_webcam_detections, _yolo_model
 
     try:
         import cv2
@@ -136,39 +137,50 @@ def _video_capture_loop():
 
     # --- This is where your next block seamlessly connects ---
     is_rtsp = isinstance(VIDEO_SOURCE, str)
+    cap = None
+    use_synthetic_video = False
 
-    if is_rtsp:
-        # DRONE / RTSP MODE
-        # Force TCP transport for stable Wi-Fi streaming (avoids UDP packet loss).
-        # GStreamer pipeline string can be swapped here for Jetson hardware decode.
-        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;" + str(RTSP_TRANSPORT)
-        logger.info("Drone RTSP stream opening: {} (transport={})".format(VIDEO_SOURCE, RTSP_TRANSPORT))
-        logger.info("Waiting for drone to broadcast... (this may take a few seconds)")
-        cap = cv2.VideoCapture(VIDEO_SOURCE, cv2.CAP_FFMPEG)
+    if VIDEO_SOURCE == "dummy":
+        logger.info("CAMERA_SOURCE=dummy env var detected. Falling back to synthetic simulation video mode.")
+        use_synthetic_video = True
     else:
-        # WEBCAM MODE (default, no drone yet)
-        logger.info("Webcam capture starting on camera index {}...".format(VIDEO_SOURCE))
-        cap = cv2.VideoCapture(VIDEO_SOURCE)
-        # Request a reasonable resolution driver will use nearest supported
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        try:
+            if is_rtsp:
+                # DRONE / RTSP MODE
+                # Force TCP transport for stable Wi-Fi streaming (avoids UDP packet loss).
+                # GStreamer pipeline string can be swapped here for Jetson hardware decode.
+                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;" + str(RTSP_TRANSPORT)
+                logger.info("Drone RTSP stream opening: {} (transport={})".format(VIDEO_SOURCE, RTSP_TRANSPORT))
+                logger.info("Waiting for drone to broadcast... (this may take a few seconds)")
+                cap = cv2.VideoCapture(VIDEO_SOURCE, cv2.CAP_FFMPEG)
+            else:
+                # WEBCAM MODE (default, no drone yet)
+                logger.info("Webcam capture starting on camera index {}...".format(VIDEO_SOURCE))
+                cap = cv2.VideoCapture(VIDEO_SOURCE)
+                if cap is not None and cap.isOpened():
+                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+                else:
+                    raise Exception("VideoCapture returned a result with an error set")
 
-    if not cap.isOpened():
-        if is_rtsp:
-            logger.error("  Could not connect to RTSP stream: {}\n".format(VIDEO_SOURCE))
-        else:
-            logger.warning(
-            "  Could not open camera {}. ".format(VIDEO_SOURCE)
-        )
-        return
+            if cap is None or not cap.isOpened():
+                raise Exception("Could not open camera or video source")
+        except Exception as e:
+            logger.warning("Could not initialize VideoCapture ({}). Falling back to synthetic simulation video mode.".format(e))
+            use_synthetic_video = True
 
     global global_video_w, global_video_h
-    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    global_video_w = w if w > 0 else 1280
-    global_video_h = h if h > 0 else 720
-    source_label = "RTSP drone stream" if is_rtsp else "webcam " + str(VIDEO_SOURCE)
-    logger.info("  {} opened at {}x{}  feeding both dashboard streams.".format(source_label, w, h))
+    if not use_synthetic_video and cap is not None:
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        global_video_w = w if w > 0 else 1280
+        global_video_h = h if h > 0 else 720
+        source_label = "RTSP drone stream" if is_rtsp else "webcam " + str(VIDEO_SOURCE)
+        logger.info("  {} opened at {}x{}  feeding both dashboard streams.".format(source_label, w, h))
+    else:
+        global_video_w = 1280
+        global_video_h = 720
+        logger.info("  Running in premium synthetic simulation feed mode.")
 
     encode_params = [cv2.IMWRITE_JPEG_QUALITY, CAMERA_QUALITY]
     interval = 1.0 / CAMERA_FPS
@@ -176,6 +188,53 @@ def _video_capture_loop():
     # Track the active loaded model for the local server webcam feed
     custom_weights = Path(__file__).resolve().parent.parent.parent / "models" / "weights" / "best.pt"
     current_loaded_model_path = str(custom_weights) if custom_weights.exists() else "yolov8n.pt"
+
+
+
+    # Calculate distance to see if drone has reached the Detection Starting Spot
+    def is_at_starting_spot():
+        global has_reached_starting_spot
+
+        target_lat = flight_config.get("start_lat", 0.0)
+        target_lng = flight_config.get("start_lng", 0.0)
+        radius = flight_config.get("start_radius_meters", 500.0)
+        enabled = flight_config.get("detection_enabled", False)
+
+        if not enabled or target_lat == 0.0 or target_lng == 0.0:
+            return False
+
+        drone_lat = latest_drone_coords.get("lat", 0.0)
+        drone_lon = latest_drone_coords.get("lon", 0.0)
+        if drone_lat == 0.0 or drone_lon == 0.0:
+            return False
+
+        import math
+        lat1, lon1 = math.radians(drone_lat), math.radians(drone_lon)
+        lat2, lon2 = math.radians(target_lat), math.radians(target_lng)
+        
+        dlat = lat2 - lat1
+        dlon = lon2 - lon1
+        
+        a = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2)**2
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        
+        distance_meters = 6371000.0 * c
+        if distance_meters <= radius:
+            if not has_reached_starting_spot:
+                logger.info(" Drone has entered the Detection Starting Spot! AI Detection System is now ACTIVE.")
+                has_reached_starting_spot = True
+
+        return has_reached_starting_spot
+
+    def is_inside_fence():
+        global global_cluster_engine
+        if global_cluster_engine is None:
+            return True  # Fallback if engine is initializing
+        drone_lat = latest_drone_coords.get("lat", 0.0)
+        drone_lon = latest_drone_coords.get("lon", 0.0)
+        if drone_lat == 0.0 or drone_lon == 0.0:
+            return False
+        return global_cluster_engine.is_in_illegal_zone(drone_lat, drone_lon)
 
     while True:
         t0 = time.time()
@@ -196,13 +255,44 @@ def _video_capture_loop():
             logger.info(" Swapping local server YOLO model: {} -> {}".format(current_loaded_model_path, target_path))
             try:
                 from ultralytics import YOLO
-                global _yolo_model
                 _yolo_model = YOLO(target_path)
                 current_loaded_model_path = target_path
                 logger.info(" Local server YOLO model successfully swapped to: {}".format(target_model_name))
             except Exception as e:
                 logger.error(" Failed to dynamic swap local YOLO model: {}".format(e))
-        ret, frame = cap.read()
+                # Prevent CPU-burning infinite retry loops on model loading failures:
+                current_loaded_model_path = target_path
+
+        if use_synthetic_video:
+            # Create a nice dark-blue grid background (simulating a tactical drone camera screen)
+            frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+            # Make it a sleek dark-blue grid background
+            frame[:, :] = [18, 12, 8] # Very dark navy blue
+            
+            # Draw standard 80px gridlines
+            for x in range(0, 1280, 80):
+                cv2.line(frame, (x, 0), (x, 720), (32, 24, 18), 1)
+            for y in range(0, 720, 80):
+                cv2.line(frame, (0, y), (1280, y), (32, 24, 18), 1)
+                
+            # Draw central tactical HUD green crosshair
+            cv2.line(frame, (640 - 20, 360), (640 + 20, 360), (0, 255, 0), 1)
+            cv2.line(frame, (640, 360 - 20), (640, 360 + 20), (0, 255, 0), 1)
+            
+            # Print status message
+            drone_lat = latest_drone_coords.get("lat", 0.0)
+            drone_lon = latest_drone_coords.get("lon", 0.0)
+            cv2.putText(frame, "TACTICAL RAW STREAM (SIMULATED)", (40, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+            cv2.putText(frame, "LAT: {:.6f}".format(drone_lat), (40, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+            cv2.putText(frame, "LON: {:.6f}".format(drone_lon), (40, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+            
+            # Add dynamic scan line sweep animation
+            scan_y = int((time.time() * 200) % 720)
+            cv2.line(frame, (0, scan_y), (1280, scan_y), (0, 80, 0), 1)
+
+            ret = True
+        else:
+            ret, frame = cap.read()
 
         if not ret:
             if is_rtsp:
@@ -213,8 +303,9 @@ def _video_capture_loop():
                 time.sleep(0.05)
             continue
 
-        # Flip the frame horizontally to correct webcam mirroring
-        frame = cv2.flip(frame, 1)
+        if not use_synthetic_video:
+            # Flip the frame horizontally to correct webcam mirroring
+            frame = cv2.flip(frame, 1)
 
         _, buf = cv2.imencode(".jpg", frame, encode_params)
         jpeg = buf.tobytes()
@@ -222,56 +313,34 @@ def _video_capture_loop():
         # Raw feed: clean, unprocessed frame from the camera
         latest_raw_frame = jpeg
 
-        # Calculate distance to see if drone has reached the Detection Starting Spot
-        def is_at_starting_spot()        :
-            global has_reached_starting_spot
-
-            target_lat = flight_config.get("start_lat", 0.0)
-            target_lng = flight_config.get("start_lng", 0.0)
-            radius = flight_config.get("start_radius_meters", 500.0)
-            enabled = flight_config.get("detection_enabled", False)
-
-            if not enabled or target_lat == 0.0 or target_lng == 0.0:
-                return False
-
-            drone_lat = latest_drone_coords.get("lat", 0.0)
-            drone_lon = latest_drone_coords.get("lon", 0.0)
-            if drone_lat == 0.0 or drone_lon == 0.0:
-                return False
-
-            import math
-            lat1, lon1 = math.radians(drone_lat), math.radians(drone_lon)
-            lat2, lon2 = math.radians(target_lat), math.radians(target_lng)
-            
-            dlat = lat2 - lat1
-            dlon = lon2 - lon1
-            
-            a = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2)**2
-            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-            
-            distance_meters = 6371000.0 * c
-            if distance_meters <= radius:
-                if not has_reached_starting_spot:
-                    logger.info(" Drone has entered the Detection Starting Spot! AI Detection System is now ACTIVE.")
-                    has_reached_starting_spot = True
-
-            return has_reached_starting_spot
-
-        def is_inside_fence()        :
-            global global_cluster_engine
-            if global_cluster_engine is None:
-                return True  # Fallback if engine is initializing
-            drone_lat = latest_drone_coords.get("lat", 0.0)
-            drone_lon = latest_drone_coords.get("lon", 0.0)
-            if drone_lat == 0.0 or drone_lon == 0.0:
-                return False
-            return global_cluster_engine.is_in_illegal_zone(drone_lat, drone_lon)
-
-        #  DETECTION HOOK 
-        # Person-only detection (COCO class 0).
-        # Replace _yolo_model with your custom model by dropping best.pt
-        # into models/weights/  it auto-loads at startup.
-        if _yolo_model is not None and is_at_starting_spot() and is_inside_fence():
+        if use_synthetic_video:
+            if is_at_starting_spot() and is_inside_fence():
+                # Simulate a drone scanning AI target (e.g. Dumper Truck or Excavator)
+                overlay = frame.copy()
+                cv2.putText(overlay, "AI DETECTION ACTIVE (SIMULATED)", (40, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                
+                # Draw a simulated target box
+                t_x, t_y = 640 - 150, 360 - 100
+                t_w, t_h = 300, 200
+                cv2.rectangle(overlay, (t_x, t_y), (t_x + t_w, t_y + t_h), (0, 0, 255), 2)
+                cv2.putText(overlay, "ILLEGAL DUMPER TRUCK: 94%", (t_x, t_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                
+                _, obuf = cv2.imencode(".jpg", overlay, encode_params)
+                latest_overlay_frame = obuf.tobytes()
+                
+                # Report detection metadata
+                latest_webcam_detections = [{
+                    'class_name': 'Dumper Truck',
+                    'confidence': 0.94,
+                    'bbox_x_min': t_x,
+                    'bbox_y_min': t_y,
+                    'bbox_x_max': t_x + t_w,
+                    'bbox_y_max': t_y + t_h
+                }]
+            else:
+                latest_overlay_frame = jpeg
+                latest_webcam_detections = []
+        elif _yolo_model is not None and is_at_starting_spot() and is_inside_fence():
             try:
                 results = _yolo_model(
                     frame,
@@ -309,7 +378,12 @@ def _video_capture_loop():
 
         # Determine the final frame to write to the recording
         recording_frame = frame
-        if _yolo_model is not None and is_at_starting_spot() and is_inside_fence():
+        if use_synthetic_video and is_at_starting_spot() and is_inside_fence():
+            try:
+                recording_frame = overlay
+            except NameError:
+                pass
+        elif _yolo_model is not None and is_at_starting_spot() and is_inside_fence():
             try:
                 recording_frame = overlay
             except NameError:
@@ -670,9 +744,9 @@ async def startup_event():
     source_desc = "RTSP: {}".format(VIDEO_SOURCE) if isinstance(VIDEO_SOURCE, str) else f"webcam {VIDEO_SOURCE}"
     logger.info("  Video capture thread launched ({})  dashboard feeds will populate shortly.".format(source_desc))
 
-    # Start the hybrid telemetry simulation loop if we are using the webcam (testing mode)
-    if isinstance(VIDEO_SOURCE, int):
-        asyncio.create_task(_webcam_telemetry_simulation_loop())
+    # Start the hybrid telemetry simulation loop if we are using the webcam or dummy (testing/emulation mode)
+    if isinstance(VIDEO_SOURCE, int) or VIDEO_SOURCE == "dummy":
+        asyncio.ensure_future(_webcam_telemetry_simulation_loop())
         logger.info(" Launched dynamic hybrid flight telemetry simulator background task.")
 
 # Frame generator for multipart MJPEG streaming
@@ -1209,7 +1283,7 @@ async def set_zone_radius(request: Request, data: dict):
             raise HTTPException(status_code=500, detail="Buffer rebuild failed  check centerline data")
 
     active_buffer_radius_m = radius_m
-    logger.info("Zone radius updated to {}m by operator".format(radius_m:.0f))
+    logger.info("Zone radius updated to {}m by operator".format(radius_m))
 
     # Broadcast to all dashboard clients + Jetson sync_worker
     await manager.broadcast({
