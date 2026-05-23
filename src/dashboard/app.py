@@ -699,7 +699,7 @@ async def frame_generator(stream_type     ):
 
 # Live Video Endpoints (multipart MJPEG)
 @app.get("/stream/raw")
-async def stream_raw(request         ):
+async def stream_raw(request: Request):
     """Serves the raw video feed from the DJI drone camera."""
     user = get_session_user(request)
     if not user:
@@ -710,7 +710,7 @@ async def stream_raw(request         ):
     )
 
 @app.get("/stream/overlay")
-async def stream_overlay(request         ):
+async def stream_overlay(request: Request):
     """Serves the real-time AI bounding box overlay video feed."""
     user = get_session_user(request)
     if not user:
@@ -722,7 +722,7 @@ async def stream_overlay(request         ):
 
 # Edge Frame Receiver Endpoint
 @app.post("/api/edge/frame")
-async def receive_edge_frame(stream_type     , request         ):
+async def receive_edge_frame(stream_type, request: Request):
     """Receives compressed JPEG frames uploaded by the Edge Jetson Nano."""
     global latest_raw_frame, latest_overlay_frame
     frame_data = await request.body()
@@ -734,7 +734,7 @@ async def receive_edge_frame(stream_type     , request         ):
 
 # Edge Telemetry & Event Sync Endpoint
 @app.post("/api/edge/sync")
-async def receive_edge_sync(data                ):
+async def receive_edge_sync(data: dict):
     """
     Receives real-time telemetry logs, detections, and alerts from the Jetson Nano
     and broadcasts them immediately to the operator dashboard via WebSockets.
@@ -812,7 +812,7 @@ def parse_date_to_utc(dt_str     , is_end       = False)       :
 
 @app.get("/api/incidents")
 def get_incidents(
-    request         ,
+    request: Request,
     severity                = Query(None, description="Filter by severity: EXTREME, SEVERE, MEDIUM, LOW"),
     start_date                = Query(None, description="Filter by start date/time (local timezone)"),
     end_date                = Query(None, description="Filter by end date/time (local timezone)")
@@ -882,7 +882,7 @@ def get_incidents(
 
 @app.get("/api/detections")
 def get_detections(
-    request         ,
+    request: Request,
     incident_id                = Query(None, description="Filter detections by Incident (Cluster) ID"),
     class_name                = Query(None, description="Filter by class type: jcb, truck, person")
 ):
@@ -949,7 +949,7 @@ def get_detections(
         conn.close()
 
 @app.get("/api/stats")
-def get_dashboard_stats(request         ):
+def get_dashboard_stats(request: Request):
     """Retrieves aggregate telemetry and spatial count metrics for the widgets."""
     user = get_session_user(request)
     if not user:
@@ -985,7 +985,7 @@ def get_dashboard_stats(request         ):
         conn.close()
 
 @app.get("/api/report/pdf")
-def export_pdf_report(request         ,
+def export_pdf_report(request: Request,
                       severity                = Query(None, description="Filter by severity"),
                       mission_id      = Query("BRH-01", description="Mission identifier")):
     """
@@ -1034,7 +1034,7 @@ def export_pdf_report(request         ,
 
 #  FLIGHT CONTROL APIS (MID-FLIGHT SWITCHING & DYNAMIC GEOFENCING) 
 @app.get("/api/flight/config")
-def get_flight_config(request         ):
+def get_flight_config(request: Request):
     """
     WHAT: REST endpoint returning active flight mission control config.
     WHY: Checked periodically by the drone edge pipeline to load the correct
@@ -1047,7 +1047,7 @@ def get_flight_config(request         ):
 
 
 @app.post("/api/flight/config")
-async def update_flight_config(request         , data                ):
+async def update_flight_config(request: Request, data: dict):
     """
     WHAT: Endpoint to update active model and geofencing coordinates.
     WHY: Operators can switch YOLOv8 vs YOLOv10 mid-flight or adjust the trigger geofence!
@@ -1088,7 +1088,7 @@ async def update_flight_config(request         , data                ):
 
 #  POSTGRES VPS DIRECT IMAGE RETRIEVAL API 
 @app.get("/api/evidence/db/{incident_id}")
-def get_evidence_image_from_db(request         , incident_id     ):
+def get_evidence_image_from_db(request: Request, incident_id):
     """
     WHAT: Retrieves binary JPEG data directly from PostgreSQL / SQLite blob storage.
     WHY: Allows serving evidence snapshots to the frontend HTML direct from the DB
@@ -1157,7 +1157,7 @@ def get_evidence_image_from_db(request         , incident_id     ):
         conn.close()
 
 @app.get("/api/evidence/{filename}")
-def get_evidence_image(request         , filename     ):
+def get_evidence_image(request: Request, filename):
     """Serves a specific evidence JPEG image by filename."""
     user = get_session_user(request)
     if not user:
@@ -1170,7 +1170,7 @@ def get_evidence_image(request         , filename     ):
 
 
 @app.get("/api/zone/radius")
-def get_zone_radius(request         ):
+def get_zone_radius(request: Request):
     """Returns the currently active buffer radius in metres."""
     user = get_session_user(request)
     if not user:
@@ -1179,7 +1179,7 @@ def get_zone_radius(request         ):
 
 
 @app.post("/api/zone/radius")
-async def set_zone_radius(request         , data                ):
+async def set_zone_radius(request: Request, data: dict):
     """
     Updates the active zone enforcement radius.
     1. Rebuilds river_buffer_1km.geojson with the new radius (server-side)
@@ -1226,7 +1226,7 @@ async def set_zone_radius(request         , data                ):
 # WebSocket endpoint
 # WebSocket endpoint
 @app.websocket("/ws")
-async def websocket_endpoint(websocket           ):
+async def websocket_endpoint(websocket: WebSocket):
     # Extract session_id from cookie to verify connection
     session_id = websocket.cookies.get("session_id")
     if not session_id or session_id not in ACTIVE_SESSIONS:
@@ -1245,7 +1245,7 @@ async def websocket_endpoint(websocket           ):
 
 # Auth API Endpoints
 @app.post("/api/auth/login")
-async def login(request         , response          , payload                ):
+async def login(request: Request, response: Response, payload: dict):
     username = payload.get("username")
     password = payload.get("password")
     
@@ -1294,7 +1294,7 @@ async def login(request         , response          , payload                ):
 ALLOWED_EMAIL_DOMAINS = [".gov", ".gov.in", ".edu", ".edu.in", ".ac.in", ".org", "gmail.com"]
 
 @app.post("/api/auth/register")
-async def register(request         , response          , payload                ):
+async def register(request: Request, response: Response, payload: dict):
     username = payload.get("username", "").strip()
     email = payload.get("email", "").strip().lower()
     password = payload.get("password", "")
@@ -1377,7 +1377,7 @@ async def register(request         , response          , payload                
     return {"status": "success", "username": username, "role": "operator"}
 
 @app.post("/api/auth/logout")
-async def logout(request         , response          ):
+async def logout(request: Request, response: Response):
     session_id = request.cookies.get("session_id")
     if session_id in ACTIVE_SESSIONS:
         del ACTIVE_SESSIONS[session_id]
@@ -1385,14 +1385,14 @@ async def logout(request         , response          ):
     return {"status": "success"}
 
 @app.get("/api/auth/status")
-async def get_auth_status(request         ):
+async def get_auth_status(request: Request):
     user = get_session_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
     return user
 
 @app.get("/login", response_class=HTMLResponse)
-def get_login_page(request         ):
+def get_login_page(request: Request):
     """Serves the login page, redirects to dashboard if already authenticated."""
     user = get_session_user(request)
     if user:
@@ -1406,7 +1406,7 @@ def get_login_page(request         ):
 
 # HTML Server
 @app.get("/", response_class=HTMLResponse)
-def get_dashboard_page(request         ):
+def get_dashboard_page(request: Request):
     """Serves the unified, premium dark-themed operator control dashboards."""
     user = get_session_user(request)
     if not user:
@@ -1422,7 +1422,7 @@ def get_dashboard_page(request         ):
 
 # Admin Flight Recording Endpoints
 @app.post("/api/admin/record/start")
-async def start_recording(request         ):
+async def start_recording(request: Request):
     user = get_session_user(request)
     if not user or user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Forbidden: Admin privilege required.")
@@ -1440,9 +1440,16 @@ async def start_recording(request         ):
         recordings_dir.mkdir(parents=True, exist_ok=True)
         recording_filepath = recordings_dir / recording_filename
         
-        # Use standard mp4v codec
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        recording_writer = cv2.VideoWriter(str(recording_filepath), fourcc, 15.0, (global_video_w, global_video_h))
+        # Try to use 'avc1' (H.264) for direct native HTML5 browser playback support.
+        # Fall back to standard 'mp4v' if the system's OpenCV has no H.264 encoder.
+        try:
+            fourcc = cv2.VideoWriter_fourcc(*'avc1')
+            recording_writer = cv2.VideoWriter(str(recording_filepath), fourcc, 15.0, (global_video_w, global_video_h))
+            if not recording_writer.isOpened():
+                raise RuntimeError("avc1 writer failed to open")
+        except Exception:
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            recording_writer = cv2.VideoWriter(str(recording_filepath), fourcc, 15.0, (global_video_w, global_video_h))
         
         if not recording_writer.isOpened():
             recording_writer = None
@@ -1454,7 +1461,7 @@ async def start_recording(request         ):
         return {"status": "started", "filename": recording_filename}
 
 @app.post("/api/admin/record/stop")
-async def stop_recording(request         ):
+async def stop_recording(request: Request):
     user = get_session_user(request)
     if not user or user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Forbidden: Admin privilege required.")
@@ -1495,7 +1502,7 @@ async def stop_recording(request         ):
         }
 
 @app.get("/api/admin/recordings")
-async def list_recordings(request         ):
+async def list_recordings(request: Request):
     user = get_session_user(request)
     if not user or user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Forbidden: Admin privilege required.")

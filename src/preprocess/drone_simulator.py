@@ -95,7 +95,7 @@ class DroneSimulator:
                 
         logger.info(f"Generated {len(self.flight_points)} high-resolution flight points.")
 
-    def generate_dynamic_test_path(self, target_lat: float, target_lon: float, start_radius_meters: float = 500.0):
+    def generate_dynamic_test_path(self, target_lat, target_lon, start_radius_meters = 500.0):
         """
         WHAT: Overwrites the static flight path centerline coordinates with a dynamic 
         launch-to-target flight trajectory.

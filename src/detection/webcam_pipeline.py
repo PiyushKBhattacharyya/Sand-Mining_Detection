@@ -35,17 +35,17 @@ class WebcamPipeline:
 
     def __init__(
         self,
-        cloud_url: str = "http://localhost:8000",
-        camera_index: int = 0,
-        target_fps: float = 15.0,
-        jpeg_quality: int = 75,
+        cloud_url = "http://localhost:8000",
+        camera_index = 0,
+        target_fps = 15.0,
+        jpeg_quality = 75,
     ):
         self.cloud_url     = cloud_url.rstrip("/")
         self.camera_index  = camera_index
         self.target_fps    = target_fps
         self.jpeg_quality  = jpeg_quality
         self.running       = False
-        self._session: Optional[requests.Session] = None
+        self._session = None
 
     # ------------------------------------------------------------------
     # Override this method when you add your detection code.
@@ -62,7 +62,7 @@ class WebcamPipeline:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-    def _open_camera(self) -> cv2.VideoCapture:
+    def _open_camera(self):
         logger.info(f"Opening camera index {self.camera_index}...")
         cap = cv2.VideoCapture(self.camera_index)
         if not cap.isOpened():
@@ -79,14 +79,14 @@ class WebcamPipeline:
         logger.info(f"  Camera opened at {w}x{h}")
         return cap
 
-    def _encode(self, frame) -> bytes:
+    def _encode(self, frame):
         params = [cv2.IMWRITE_JPEG_QUALITY, self.jpeg_quality]
         ok, buf = cv2.imencode(".jpg", frame, params)
         if not ok:
             raise RuntimeError("JPEG encoding failed")
         return buf.tobytes()
 
-    def _post(self, endpoint: str, jpeg_bytes: bytes):
+    def _post(self, endpoint, jpeg_bytes):
         """
         Best-effort POST  silently drops the frame if the server is
         unreachable (same resilient pattern as the edge pipeline).

@@ -90,7 +90,7 @@ class EdgePipeline:
         self.dynamic_path_generated = False
         self.current_flight_idx = 0
 
-    def load_yolo_model(self, model_name: str):
+    def load_yolo_model(self, model_name):
         """Dynamically loads/swaps the active YOLO model weights mid-flight."""
         if self.active_model_name == model_name and self.yolo_model is not None:
             return  # Already loaded
@@ -111,7 +111,7 @@ class EdgePipeline:
         except Exception as e:
             logger.error(f" Failed to load model weights {model_name}: {e}")
 
-    def check_geofence_trigger(self, drone_lat: float, drone_lon: float) -> bool:
+    def check_geofence_trigger(self, drone_lat, drone_lon):
         """Calculates distance to starting point and returns True if inside start geofence."""
         if self.start_lat == 0.0 or self.start_lon == 0.0:
             return False
@@ -128,7 +128,7 @@ class EdgePipeline:
         distance_meters = 6371000.0 * c  # Earth radius ~6,371,000 meters
         return distance_meters <= self.start_radius
 
-    def generate_simulated_detections(self, drone_lat: float, drone_lon: float, step: int) -> List[Dict[str, Any]]:
+    def generate_simulated_detections(self, drone_lat, drone_lon, step):
         """
         Periodically generates mock illegal sand mining target clusters in the field of view:
         e.g., Trucks, Excavators (JCBs), and Workers.
@@ -212,7 +212,7 @@ class EdgePipeline:
         random.seed()
         return detections
 
-    def draw_edge_overlay_canvas(self, telemetry: Dict[str, Any], detections: List[Dict[str, Any]], step: int) -> Tuple[bytes, bytes]:
+    def draw_edge_overlay_canvas(self, telemetry, detections, step):
         """
         Creates two beautiful simulated video feeds on the Jetson Nano:
         1. Raw Video: Simulated high-altitude orthophoto ground background with altimeter overlays.

@@ -20,7 +20,7 @@ try:
 except Exception:
     pass
 
-def run_inference(image_path: str, weights_path: str, output_path: str, apply_colormap: bool = False):
+def run_inference(image_path, weights_path, output_path, apply_colormap = False):
     path = Path(image_path)
     if not path.exists():
         print(f" Error: Image not found at {image_path}")
