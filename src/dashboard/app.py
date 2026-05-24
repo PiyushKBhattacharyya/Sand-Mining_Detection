@@ -313,32 +313,8 @@ def _video_capture_loop():
         latest_raw_frame = jpeg
 
         if use_synthetic_video:
-            if is_at_starting_spot() and is_inside_fence():
-                # Simulate a drone scanning AI target (e.g. Dumper Truck or Excavator)
-                overlay = frame.copy()
-                cv2.putText(overlay, "AI DETECTION ACTIVE (SIMULATED)", (40, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-                
-                # Draw a simulated target box
-                t_x, t_y = 640 - 150, 360 - 100
-                t_w, t_h = 300, 200
-                cv2.rectangle(overlay, (t_x, t_y), (t_x + t_w, t_y + t_h), (0, 0, 255), 2)
-                cv2.putText(overlay, "ILLEGAL DUMPER TRUCK: 94%", (t_x, t_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-                
-                _, obuf = cv2.imencode(".jpg", overlay, encode_params)
-                latest_overlay_frame = obuf.tobytes()
-                
-                # Report detection metadata
-                latest_webcam_detections = [{
-                    'class_name': 'Dumper Truck',
-                    'confidence': 0.94,
-                    'bbox_x_min': t_x,
-                    'bbox_y_min': t_y,
-                    'bbox_x_max': t_x + t_w,
-                    'bbox_y_max': t_y + t_h
-                }]
-            else:
-                latest_overlay_frame = jpeg
-                latest_webcam_detections = []
+            latest_overlay_frame = jpeg
+            latest_webcam_detections = []
         elif _yolo_model is not None:
             try:
                 # Detect person (0), car (2), motorcycle (3), bus (5), truck (7)
