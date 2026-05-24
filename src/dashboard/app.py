@@ -138,57 +138,18 @@ def _video_capture_loop():
         logger.warning("opencv-python not installed video feed disabled.")
         return
 
-    # --- This is where your next block seamlessly connects ---
-    is_rtsp = isinstance(VIDEO_SOURCE, str) and (VIDEO_SOURCE.startswith("rtsp://") or VIDEO_SOURCE.startswith("rtmp://") or VIDEO_SOURCE.startswith("http://") or VIDEO_SOURCE.startswith("https://"))
-    is_file = isinstance(VIDEO_SOURCE, str) and not is_rtsp
+    # We start with synthetic video fallback. The dynamic hot-swapping block
+    # inside the main loop will automatically trigger on the very first step
+    # to open the user's configured live RTMP/RTSP stream or webcam index dynamically!
     cap = None
-    use_synthetic_video = False
-
-    if VIDEO_SOURCE == "dummy":
-        logger.info("CAMERA_SOURCE=dummy env var detected. Falling back to synthetic simulation video mode.")
-        use_synthetic_video = True
-    else:
-        try:
-            if is_rtsp:
-                # DRONE / RTSP MODE
-                # Force TCP transport for stable Wi-Fi streaming (avoids UDP packet loss).
-                # GStreamer pipeline string can be swapped here for Jetson hardware decode.
-                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;" + str(RTSP_TRANSPORT)
-                logger.info("Drone RTSP stream opening: {} (transport={})".format(VIDEO_SOURCE, RTSP_TRANSPORT))
-                logger.info("Waiting for drone to broadcast... (this may take a few seconds)")
-                cap = cv2.VideoCapture(VIDEO_SOURCE, cv2.CAP_FFMPEG)
-            elif is_file:
-                # LOCAL VIDEO FILE (testing on VPS without webcam)
-                logger.info("Opening local video file stream: {}...".format(VIDEO_SOURCE))
-                cap = cv2.VideoCapture(VIDEO_SOURCE)
-            else:
-                # WEBCAM MODE (default, no drone yet)
-                logger.info("Webcam capture starting on camera index {}...".format(VIDEO_SOURCE))
-                cap = cv2.VideoCapture(VIDEO_SOURCE)
-                if cap is not None and cap.isOpened():
-                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-                else:
-                    raise Exception("VideoCapture returned a result with an error set")
-
-            if cap is None or not cap.isOpened():
-                raise Exception("Could not open camera or video source")
-        except Exception as e:
-            logger.warning("Could not initialize VideoCapture ({}). Falling back to synthetic simulation video mode.".format(e))
-            use_synthetic_video = True
+    use_synthetic_video = True
+    current_source = None
+    is_rtsp = False
+    is_file = False
 
     global global_video_w, global_video_h
-    if not use_synthetic_video and cap is not None:
-        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        global_video_w = w if w > 0 else 1280
-        global_video_h = h if h > 0 else 720
-        source_label = "RTSP drone stream" if is_rtsp else "webcam " + str(VIDEO_SOURCE)
-        logger.info("  {} opened at {}x{}  feeding both dashboard streams.".format(source_label, w, h))
-    else:
-        global_video_w = 1280
-        global_video_h = 720
-        logger.info("  Running in premium synthetic simulation feed mode.")
+    global_video_w = 1280
+    global_video_h = 720
 
     encode_params = [cv2.IMWRITE_JPEG_QUALITY, CAMERA_QUALITY]
     interval = 1.0 / CAMERA_FPS
@@ -197,11 +158,70 @@ def _video_capture_loop():
     custom_weights = Path(__file__).resolve().parent.parent.parent / "models" / "weights" / "best.pt"
     current_loaded_model_path = str(custom_weights) if custom_weights.exists() else "yolov8n.pt"
 
-
-
-
     while True:
         t0 = time.time()
+
+        # Dynamically hot-swap video source if the operator changed it on the dashboard HUD!
+        target_source = flight_config.get("video_source", "0")
+        
+        # Normalize target source type (integers for cameras, strings for RTMP/RTSP/files)
+        if isinstance(target_source, str) and target_source.lstrip("-").isdigit():
+            target_source = int(target_source)
+
+        if current_source != target_source:
+            logger.info(" Swapping live video capture source: {} -> {}".format(current_source, target_source))
+            if cap is not None:
+                try:
+                    cap.release()
+                except Exception as ex_rel:
+                    logger.debug("Error releasing previous VideoCapture: {}".format(ex_rel))
+                cap = None
+
+            current_source = target_source
+            use_synthetic_video = False
+
+            if target_source == "dummy":
+                logger.info("  New source is dummy. Falling back to synthetic simulation mode.")
+                use_synthetic_video = True
+            else:
+                try:
+                    is_rtsp = isinstance(target_source, str) and (
+                        target_source.startswith("rtsp://") or 
+                        target_source.startswith("rtmp://") or 
+                        target_source.startswith("http://") or 
+                        target_source.startswith("https://")
+                    )
+                    is_file = isinstance(target_source, str) and not is_rtsp
+
+                    if is_rtsp:
+                        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;" + str(RTSP_TRANSPORT)
+                        logger.info("  Connecting to dynamic drone stream: {} (transport={})".format(target_source, RTSP_TRANSPORT))
+                        cap = cv2.VideoCapture(target_source, cv2.CAP_FFMPEG)
+                    elif is_file:
+                        logger.info("  Opening dynamic video file: {}...".format(target_source))
+                        cap = cv2.VideoCapture(target_source)
+                    else:
+                        logger.info("  Starting dynamic webcam camera index {}...".format(target_source))
+                        cap = cv2.VideoCapture(target_source)
+                        if cap is not None and cap.isOpened():
+                            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+                            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+
+                    if cap is None or not cap.isOpened():
+                        raise Exception("VideoCapture returned an error or is closed")
+
+                    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    global_video_w = w if w > 0 else 1280
+                    global_video_h = h if h > 0 else 720
+                    source_label = "RTSP dynamic stream" if is_rtsp else f"Camera index {target_source}"
+                    logger.info("  [SUCCESS] {} dynamic swapped successfully at {}x{}".format(source_label, global_video_w, global_video_h))
+
+                except Exception as e:
+                    logger.warning("  Could not open dynamic source ({})  falling back to synthetic simulation.".format(e))
+                    use_synthetic_video = True
+                    global_video_w = 1280
+                    global_video_h = 720
 
         if local_webcam_mode:
             # If the user is actively streaming their browser webcam, pause drone file playback!
@@ -416,6 +436,7 @@ flight_config = {
     "start_lat": 0.0,              # Dynamic start coordinate latitude
     "start_lng": 0.0,              # Dynamic start coordinate longitude
     "start_radius_meters": 500.0,  # Dynamic start radius in meters
+    "video_source": os.getenv("VIDEO_SOURCE", "0"), # Dynamic RTMP/RTSP stream source or camera index
     "detection_enabled": False,
 }
 
@@ -1290,6 +1311,7 @@ async def update_flight_config(request: Request, data: dict):
     flight_config["start_lat"]           = new_lat
     flight_config["start_lng"]           = new_lng
     flight_config["start_radius_meters"] = new_rad
+    flight_config["video_source"]        = data.get("video_source", flight_config.get("video_source", ""))
     flight_config["detection_enabled"]   = bool(data.get("detection_enabled", flight_config["detection_enabled"]))
     
     # Reset starting spot trigger only if starting geofence coordinates/radius actually changed!
