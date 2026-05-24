@@ -1248,7 +1248,13 @@
 
                     timer = setInterval(() => {
                         if (videoEl.readyState === videoEl.HAVE_CURRENT_DATA || videoEl.readyState === videoEl.HAVE_ENOUGH_DATA) {
+                            // Flip canvas horizontally to correct mirroring on the uploaded stream
+                            ctx.save();
+                            ctx.translate(canvas.width, 0);
+                            ctx.scale(-1, 1);
                             ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+                            ctx.restore();
+
                             canvas.toBlob((blob) => {
                                 if (blob) {
                                     fetch(BASE_PATH + 'api/edge/frame?stream_type=raw', {
