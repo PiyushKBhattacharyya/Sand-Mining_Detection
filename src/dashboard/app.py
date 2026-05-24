@@ -471,17 +471,12 @@ def is_at_starting_spot():
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     
     distance_meters = 6371000.0 * c
-    is_inside = distance_meters <= radius
-    if is_inside:
+    if distance_meters <= radius:
         if not has_reached_starting_spot:
             logger.info(" Drone has entered the Detection Starting Spot! AI Detection System is now ACTIVE.")
             has_reached_starting_spot = True
-    else:
-        if has_reached_starting_spot:
-            logger.info(" Drone has left the Detection Starting Spot. AI Detection System is now INACTIVE.")
-            has_reached_starting_spot = False
 
-    return is_inside
+    return has_reached_starting_spot
 
 def is_inside_fence():
     global global_cluster_engine
@@ -924,7 +919,7 @@ async def receive_edge_frame(stream_type: str, request: Request):
                                         'bbox_y_max': int(coords[3])
                                     })
                             
-                            if is_at_starting_spot() and is_inside_fence():
+                            if is_at_starting_spot():
                                 latest_webcam_detections = active_dets
                             else:
                                 latest_webcam_detections = []
@@ -933,7 +928,7 @@ async def receive_edge_frame(stream_type: str, request: Request):
                         # Copy the last known detections and manually draw them on the raw frame
                         # to keep the video stream perfectly fluid (30 FPS) with absolutely zero lag!
                         overlay = frame.copy()
-                        if is_at_starting_spot() and is_inside_fence():
+                        if is_at_starting_spot():
                             for det in latest_webcam_detections:
                                 x1 = det.get('bbox_x_min', 0)
                                 y1 = det.get('bbox_y_min', 0)
@@ -949,14 +944,14 @@ async def receive_edge_frame(stream_type: str, request: Request):
                 
                 _, obuf = cv2.imencode(".jpg", overlay, [cv2.IMWRITE_JPEG_QUALITY, 75])
                 latest_overlay_frame = obuf.tobytes()
-
+ 
                 # If recording is active, write browser frames to output file directly on the VPS!
                 if is_recording:
                     with recording_lock:
                         if recording_writer is not None:
                             try:
                                 # Pick annotated overlay if inside geofence, else raw frame
-                                if is_at_starting_spot() and is_inside_fence():
+                                if is_at_starting_spot():
                                     recording_frame = overlay
                                 else:
                                     recording_frame = frame
