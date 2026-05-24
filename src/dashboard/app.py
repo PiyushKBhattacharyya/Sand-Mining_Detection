@@ -450,12 +450,17 @@ def is_at_starting_spot():
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     
     distance_meters = 6371000.0 * c
-    if distance_meters <= radius:
+    is_inside = distance_meters <= radius
+    if is_inside:
         if not has_reached_starting_spot:
             logger.info(" Drone has entered the Detection Starting Spot! AI Detection System is now ACTIVE.")
             has_reached_starting_spot = True
+    else:
+        if has_reached_starting_spot:
+            logger.info(" Drone has left the Detection Starting Spot. AI Detection System is now INACTIVE.")
+            has_reached_starting_spot = False
 
-    return has_reached_starting_spot
+    return is_inside
 
 def is_inside_fence():
     global global_cluster_engine
