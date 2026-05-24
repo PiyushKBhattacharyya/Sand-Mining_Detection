@@ -842,6 +842,8 @@ async def receive_edge_frame(stream_type: str, request: Request):
         latest_raw_frame = frame_data
         
         # Run YOLO on the VPS when receiving webcam frames from the local laptop client!
+        # Run in executor so YOLO (slow CPU inference) does NOT block the async event loop
+        # which would freeze the overlay stream.
         try:
             import cv2
             import numpy as np
@@ -853,12 +855,17 @@ async def receive_edge_frame(stream_type: str, request: Request):
                 overlay = frame.copy()
                 if _yolo_model is not None:
                     # Detect person (0), car (2), motorcycle (3), bus (5), truck (7)
-                    results = _yolo_model(
-                        frame,
-                        verbose=False,
-                        classes=[0, 2, 3, 5, 7],
-                        conf=0.30,
-                        iou=0.45,
+                    # Run YOLO in thread pool so the async loop stays unblocked
+                    loop = asyncio.get_event_loop()
+                    results = await loop.run_in_executor(
+                        None,
+                        lambda: _yolo_model(
+                            frame,
+                            verbose=False,
+                            classes=[0, 2, 3, 5, 7],
+                            conf=0.30,
+                            iou=0.45,
+                        )
                     )
                     overlay = results[0].plot()
                     

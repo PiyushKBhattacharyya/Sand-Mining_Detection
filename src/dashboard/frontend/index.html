@@ -1682,7 +1682,8 @@
                     `);
             });
 
-            document.getElementById('visible-markers-count').textContent = visibleCount;
+            const vmc = document.getElementById('visible-markers-count');
+            if (vmc) vmc.textContent = visibleCount;
         }
 
         //  TAB 2: Audit data loader (throttled to max 1 call per 3s unless forced) 
