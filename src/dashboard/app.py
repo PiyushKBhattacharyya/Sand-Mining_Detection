@@ -866,15 +866,20 @@ async def receive_edge_frame(stream_type: str, request: Request):
     last_webcam_frame_time = time.time()
 
     if stream_type == "raw":
-        latest_raw_frame = frame_data
-        
-        # Run YOLO on the VPS when receiving webcam frames from the local laptop client!
+        # Decode and process browser webcam frame
         try:
             import cv2
             import numpy as np
             nparr = np.frombuffer(frame_data, np.uint8)
             frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
             if frame is not None:
+                # Flip the frame horizontally to correct webcam mirroring
+                frame = cv2.flip(frame, 1)
+                
+                # Re-encode flipped frame to update the raw stream
+                _, raw_buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                latest_raw_frame = raw_buf.tobytes()
+                
                 # Determine overlays and run YOLO on VPS
                 active_dets = []
                 overlay = frame.copy()
