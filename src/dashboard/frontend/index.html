@@ -1964,7 +1964,8 @@
                     
                     const sourceInput = document.getElementById('stream-source-input');
                     if (sourceInput) {
-                        sourceInput.value = cfg.video_source || '';
+                        const val = cfg.video_source || '';
+                        sourceInput.value = (val === 'dummy') ? '' : val;
                     }
 
                     if (cfg.start_lat !== 0.0 && cfg.start_lng !== 0.0) {
@@ -2003,7 +2004,7 @@
                     start_lat: parseFloat(latInput.value),
                     start_lng: parseFloat(lonInput.value),
                     start_radius_meters: parseFloat(radiusSelect.value),
-                    video_source: sourceInput ? sourceInput.value.trim() : "",
+                    video_source: (sourceInput && sourceInput.value.trim()) ? sourceInput.value.trim() : "dummy",
                     detection_enabled: true
                 };
 
