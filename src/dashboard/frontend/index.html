@@ -828,53 +828,63 @@
                             <div class="divider" style="margin: 8px 0;"></div>
                         </div>
 
-                        <!--  DYNAMIC DYNAMIC VIDEO / RTMP SOURCE  -->
-                        <h4 style="font-size: 11px; margin-bottom: 4px; color: #f43f5e;">Live Drone Stream Source:</h4>
-                        <input type="text" id="stream-source-input" placeholder="e.g. rtmp://domain/live/key or 0"
-                            style="width:95%; padding: 4px 6px; font-size:11px; background:#111827; border:1px solid #374151; color:#fff; border-radius:4px; outline:none; margin-bottom: 8px;">
-
-                        <!--  DYNAMIC MID-FLIGHT MODEL SWITCHER  -->
-                        <h4 style="font-size: 11px; margin-bottom: 4px; color: #60a5fa;">Mid-Flight AI Model:</h4>
-                        <select id="model-select"
-                            style="width:100%; padding: 4px; font-size:11px; background:#111827; border:1px solid #374151; color:#fff; border-radius:4px; outline:none; margin-bottom: 6px;">
-                            <option value="yolov8n.pt">YOLOv8 Nano (Fastest)</option>
-                            <option value="yolov8m.pt">YOLOv8 Medium (Accurate)</option>
-                            <option value="yolov10n.pt">YOLOv10 Nano (Optimal)</option>
-                            <option value="custom_river_model.pt">Custom Fine-Tuned Model</option>
-                        </select>
-
-                        <!--  DYNAMIC GEOFENCE START TRIGGER CONTROLS  -->
-                        <h4 style="font-size: 11px; margin-bottom: 4px; color: #34d399;">Detection Start Geofence:</h4>
-                        <div style="display:flex; flex-direction:column; gap:4px; margin-bottom:6px;">
-                            <div class="info-row">
-                                <span>Start Lat:</span>
-                                <input type="number" id="geofence-lat" value="0.0" step="0.0001"
-                                    style="width:100px; padding:2px; font-size:10px; background:#111827; border:1px solid #374151; color:#fff; text-align:center; border-radius:3px;">
-                            </div>
-                            <div class="info-row">
-                                <span>Start Lon:</span>
-                                <input type="number" id="geofence-lon" value="0.0" step="0.0001"
-                                    style="width:100px; padding:2px; font-size:10px; background:#111827; border:1px solid #374151; color:#fff; text-align:center; border-radius:3px;">
-                            </div>
-                            <div class="info-row">
-                                <span>Start Radius:</span>
-                                <select id="geofence-radius"
-                                    style="width:100px; padding:2px; font-size:10px; background:#111827; border:1px solid #374151; color:#fff; border-radius:3px; outline:none;">
-                                    <option value="250">250m</option>
-                                    <option value="500" selected>500m</option>
-                                    <option value="1000">1000m</option>
-                                    <option value="2000">2000m</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div style="font-size: 9px; color: #9ca3af; margin-bottom: 6px; font-style: italic;">
-                            Tip: Double-click anywhere on the map to set the geofence start coordinates!
+                        <!--  COLLAPSIBLE ADVANCED PARAMETERS TO KEEP UI SIMPLE  -->
+                        <div style="text-align:center; margin: 6px 0 2px 0;">
+                            <button id="btn-toggle-advanced-hud" type="button"
+                                style="background:transparent; border:none; color:#60a5fa; font-size:10px; cursor:pointer; text-decoration:underline; font-weight:600; outline:none; padding:2px 4px;">
+                                Show Advanced Settings
+                            </button>
                         </div>
 
-                        <div style="display:flex; gap:4px; margin-top:8px;">
-                            <button id="btn-save-flight-cfg" class="btn btn-primary"
-                                style="width:100%; justify-content:center; padding:4px 8px; font-size:10px;">Apply
-                                Flight Parameters</button>
+                        <div id="hud-advanced-settings" style="display: none; border-top: 1px solid #374151; padding-top: 8px; margin-top: 6px;">
+                            <!--  DYNAMIC DYNAMIC VIDEO / RTMP SOURCE  -->
+                            <h4 style="font-size: 11px; margin-bottom: 4px; color: #f43f5e;">Live Drone Stream Source:</h4>
+                            <input type="text" id="stream-source-input" placeholder="e.g. rtmp://domain/live/key or 0"
+                                style="width:95%; padding: 4px 6px; font-size:11px; background:#111827; border:1px solid #374151; color:#fff; border-radius:4px; outline:none; margin-bottom: 8px;">
+
+                            <!--  DYNAMIC MID-FLIGHT MODEL SWITCHER  -->
+                            <h4 style="font-size: 11px; margin-bottom: 4px; color: #60a5fa;">Mid-Flight AI Model:</h4>
+                            <select id="model-select"
+                                style="width:100%; padding: 4px; font-size:11px; background:#111827; border:1px solid #374151; color:#fff; border-radius:4px; outline:none; margin-bottom: 6px;">
+                                <option value="yolov8n.pt">YOLOv8 Nano (Fastest)</option>
+                                <option value="yolov8m.pt">YOLOv8 Medium (Accurate)</option>
+                                <option value="yolov10n.pt">YOLOv10 Nano (Optimal)</option>
+                                <option value="custom_river_model.pt">Custom Fine-Tuned Model</option>
+                            </select>
+
+                            <!--  DYNAMIC GEOFENCE START TRIGGER CONTROLS  -->
+                            <h4 style="font-size: 11px; margin-bottom: 4px; color: #34d399;">Detection Start Geofence:</h4>
+                            <div style="display:flex; flex-direction:column; gap:4px; margin-bottom:6px;">
+                                <div class="info-row">
+                                    <span>Start Lat:</span>
+                                    <input type="number" id="geofence-lat" value="0.0" step="0.0001"
+                                        style="width:100px; padding:2px; font-size:10px; background:#111827; border:1px solid #374151; color:#fff; text-align:center; border-radius:3px;">
+                                </div>
+                                <div class="info-row">
+                                    <span>Start Lon:</span>
+                                    <input type="number" id="geofence-lon" value="0.0" step="0.0001"
+                                        style="width:100px; padding:2px; font-size:10px; background:#111827; border:1px solid #374151; color:#fff; text-align:center; border-radius:3px;">
+                                </div>
+                                <div class="info-row">
+                                    <span>Start Radius:</span>
+                                    <select id="geofence-radius"
+                                        style="width:100px; padding:2px; font-size:10px; background:#111827; border:1px solid #374151; color:#fff; border-radius:3px; outline:none;">
+                                        <option value="250">250m</option>
+                                        <option value="500" selected>500m</option>
+                                        <option value="1000">1000m</option>
+                                        <option value="2000">2000m</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div style="font-size: 9px; color: #9ca3af; margin-bottom: 6px; font-style: italic;">
+                                Tip: Double-click anywhere on the map to set the geofence start coordinates!
+                            </div>
+
+                            <div style="display:flex; gap:4px; margin-top:8px;">
+                                <button id="btn-save-flight-cfg" class="btn btn-primary"
+                                    style="width:100%; justify-content:center; padding:4px 8px; font-size:10px;">Apply
+                                    Flight Parameters</button>
+                            </div>
                         </div>
                     </div>
 
@@ -1871,6 +1881,22 @@
             const latInput = document.getElementById('geofence-lat');
             const lonInput = document.getElementById('geofence-lon');
             const radiusSelect = document.getElementById('geofence-radius');
+
+            // Advanced settings collapsible toggle
+            const btnToggleAdvanced = document.getElementById('btn-toggle-advanced-hud');
+            const advancedSettingsDiv = document.getElementById('hud-advanced-settings');
+            if (btnToggleAdvanced && advancedSettingsDiv) {
+                btnToggleAdvanced.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (advancedSettingsDiv.style.display === 'none') {
+                        advancedSettingsDiv.style.display = 'block';
+                        btnToggleAdvanced.textContent = 'Hide Advanced Settings';
+                    } else {
+                        advancedSettingsDiv.style.display = 'none';
+                        btnToggleAdvanced.textContent = 'Show Advanced Settings';
+                    }
+                });
+            }
 
             let startGeofenceMarker = null;
             let startGeofenceCircle = null;
