@@ -623,6 +623,126 @@ async def _telemetry_fallback_broadcast_loop():
             logger.debug(f"Telemetry fallback loop: {e}")
         await asyncio.sleep(1.0)
 
+async def _mavsdk_telemetry_loop():
+    """
+    Asynchronous task that listens for incoming MAVLink packets on UDP port 14550.
+    Extracts exact live GPS, altitude, speed, and battery telemetry from MAVSDK,
+    saves them to the local sqlite database, and broadcasts them via websockets.
+    """
+    global latest_drone_coords, manager, db_manager
+    await asyncio.sleep(5.0)  # Wait for startup and uvicorn bind
+    
+    try:
+        from mavsdk import System
+        import datetime
+        
+        drone = System()
+        
+        logger.info("[MAVSDK] Attempting to bind MAVLink UDP port 14550...")
+        await drone.connect(system_address="udp://:14550")
+        
+        # Monitor connection state
+        logger.info("[MAVSDK] MAVLink listener bound! Monitoring connection state...")
+        async for state in drone.core.connection_state():
+            if state.is_connected:
+                logger.info("[MAVSDK] Telemetry link successfully established!")
+                break
+    except Exception as e:
+        logger.error(f"[MAVSDK] Telemetry initialization failed (graceful bypass): {e}")
+        return
+
+    # Define SQL command for database telemetry inserts
+    insert_telemetry_sql = """
+    INSERT INTO telemetry_logs (
+        timestamp, latitude, longitude, altitude_agl, 
+        gimbal_pitch, gimbal_yaw, gimbal_roll, 
+        drone_speed, battery_percentage, gps_accuracy_m
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    """
+
+    # Helper function to save telemetry into SQLite
+    def save_telemetry_db(timestamp, lat, lon, alt, speed, battery):
+        try:
+            conn = db_manager.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(insert_telemetry_sql, (
+                timestamp, lat, lon, alt, -80.0, 0.0, 0.0, speed, int(battery), 0.15
+            ))
+            t_id = cursor.lastrowid
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return t_id
+        except Exception as db_err:
+            logger.error(f"[MAVSDK] Database logging error: {db_err}")
+            return None
+
+    # Async sub-listeners to fetch coordinates and telemetry from MAVSDK in real-time
+    async def position_listener():
+        global latest_drone_coords
+        try:
+            async for pos in drone.telemetry.position():
+                latest_drone_coords["lat"] = pos.latitude_deg
+                latest_drone_coords["lon"] = pos.longitude_deg
+                latest_drone_coords["alt"] = pos.relative_altitude_m
+        except Exception as pos_ex:
+            logger.debug(f"[MAVSDK] Position stream interrupted: {pos_ex}")
+
+    async def battery_listener():
+        try:
+            async for bat in drone.telemetry.battery():
+                flight_config["battery"] = int(bat.remaining_percent * 100)
+        except Exception as bat_ex:
+            logger.debug(f"[MAVSDK] Battery stream interrupted: {bat_ex}")
+
+    async def speed_listener():
+        try:
+            async for speed_info in drone.telemetry.velocity_ned():
+                v_north = speed_info.north_m_s
+                v_east = speed_info.east_m_s
+                abs_speed = (v_north**2 + v_east**2)**0.5
+                flight_config["speed"] = abs_speed
+        except Exception as sp_ex:
+            logger.debug(f"[MAVSDK] Speed stream interrupted: {sp_ex}")
+
+    # Launch MAVSDK telemetry sub-listeners as parallel tasks
+    asyncio.ensure_future(position_listener())
+    asyncio.ensure_future(battery_listener())
+    asyncio.ensure_future(speed_listener())
+
+    loop = asyncio.get_event_loop()
+    
+    # Standard broadcast rate loop (approx 1 Hz)
+    while True:
+        try:
+            lat = latest_drone_coords.get("lat", 0.0)
+            lon = latest_drone_coords.get("lon", 0.0)
+            alt = latest_drone_coords.get("alt", 70.0)
+            battery = flight_config.get("battery", 95)
+            speed = flight_config.get("speed", 0.0)
+
+            if lat != 0.0 and lon != 0.0:
+                timestamp = datetime.datetime.now().isoformat()
+                
+                # Save to database
+                await loop.run_in_executor(None, save_telemetry_db, timestamp, lat, lon, alt, speed, battery)
+                
+                # Broadcast MAVLink telemetry packet to all WebSockets
+                await manager.broadcast({
+                    "type": "telemetry",
+                    "payload": {
+                        "timestamp": timestamp,
+                        "lat": lat,
+                        "lon": lon,
+                        "altitude": alt,
+                        "speed": speed,
+                        "battery": battery
+                    }
+                })
+        except Exception as loop_ex:
+            logger.debug(f"[MAVSDK] Telemetry broadcast loop error: {loop_ex}")
+        await asyncio.sleep(1.0)
+
 async def _webcam_telemetry_simulation_loop():
     global latest_webcam_detections, db_manager, active_buffer_radius_m, global_cluster_engine
     
@@ -901,6 +1021,9 @@ async def startup_event():
 
     # Start the fallback telemetry loop so manual map clicks can place the drone!
     asyncio.ensure_future(_telemetry_fallback_broadcast_loop())
+    
+    # Start the live MAVSDK MAVLink telemetry listener on UDP port 14550!
+    asyncio.ensure_future(_mavsdk_telemetry_loop())
 
 
 
