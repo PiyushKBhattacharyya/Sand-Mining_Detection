@@ -150,6 +150,7 @@ def _video_capture_loop():
     interval = 1.0 / CAMERA_FPS
 
     consecutive_drops = 0
+    last_retry_time = 0.0
 
     while True:
         t0 = time.time()
@@ -160,6 +161,13 @@ def _video_capture_loop():
         # Normalize target source type (integers for cameras, strings for RTMP/RTSP/files)
         if isinstance(target_source, str) and target_source.lstrip("-").isdigit():
             target_source = int(target_source)
+
+        # Force a periodic retry if we are currently in synthetic fallback mode but a real stream source is configured
+        if use_synthetic_video and target_source != "dummy":
+            if time.time() - last_retry_time > 5.0:
+                logger.info(" Currently in synthetic fallback. Retrying to connect to real stream source: {}".format(target_source))
+                current_source = None # This will trigger a re-connection attempt below!
+                last_retry_time = time.time()
 
         if current_source != target_source:
             logger.info(" Swapping live video capture source: {} -> {}".format(current_source, target_source))
