@@ -1,0 +1,70 @@
+# High-Performance Streaming & Low-Latency YOLO Inference Plan
+
+This implementation plan details the optimizations required to eliminate video stream lag and stuttering across the Sand Mining Detection dashboard and pipeline systems. By decoupling heavy network I/O and CPU-bound YOLO inference from frame acquisition, we will achieve fluid, real-time 30 FPS video streaming.
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> **Key Architectural Improvements:**
+> 1. **Event-Driven MJPEG Streaming:** We will replace uvicorn's polling-based `await asyncio.sleep(0.06)` stream generator with a highly reactive `asyncio.Event` trigger. The server will stream a frame to the browser the exact millisecond it is captured or analyzed, rather than spinning on a timer.
+> 2. **Decoupled Server-Side YOLO:** In Webcam/Edge Mode, the `/api/edge/frame` HTTP POST handler will return `{"status": "ok"}` immediately after receiving the frame (taking under 2ms). Inference will run asynchronously in uvicorn's background thread, preventing YOLO from bottlenecking HTTP request completion.
+> 3. **Queue-Based Pipeline Uploading:** We will add a thread-safe dropping queue and background worker to `WebcamPipeline` and `EdgePipeline`. The frame capture loop will read the camera fluidly (30 FPS) and drop frames into the queue. The background uploader will stream them without blocking camera capture.
+
+---
+
+## Proposed Changes
+
+### 1. Dashboard Backend
+
+#### [MODIFY] [app.py](file:///d:/Projects/Sand-Mining_Detection/src/dashboard/app.py)
+* **Active Event Loop & Event Storage:** Declare global variables `main_loop`, `raw_frame_event`, and `overlay_frame_event`. Initialize them inside uvicorn's `@app.on_event("startup")` handler.
+* **Thread-Safe Notification Helpers:** Implement `notify_raw_frame()` and `notify_overlay_frame()` using `main_loop.call_soon_threadsafe(event.set)` to safely trigger stream updates from uvicorn background threads.
+* **Refactor `frame_generator`:** Update the generator to wait on `event.wait()` with a 1.0s timeout fallback to keep the connection alive while completely eliminating polling sleep overhead.
+* **Decouple `receive_edge_frame` POST Handler:**
+  * Save the received raw JPEG bytes to `latest_raw_frame` and trigger `notify_raw_frame()`.
+  * Convert the frame to BGR numpy, save it to `latest_bgr_frame` under `frame_lock` so uvicorn's background `_yolo_inference_loop` can pick it up.
+  * Return `{"status": "ok"}` immediately to unblock the client without waiting for YOLO inference.
+* **Stream-Agnostic `_yolo_inference_loop`:** Let the background YOLO thread run on `latest_bgr_frame` regardless of source mode, updating `latest_overlay_frame` and triggering `notify_overlay_frame()`.
+
+---
+
+### 2. Client-Side Pipelines
+
+#### [MODIFY] [webcam_pipeline.py](file:///d:/Projects/Sand-Mining_Detection/src/detection/webcam_pipeline.py)
+* **Background Queue Uploader:** Create `self.upload_queue = queue.Queue(maxsize=2)` and launch a background `uploader_worker` thread.
+* **LIFO Queue Dropping:** Implement `queue_upload()` which drops the oldest frame if the queue is full, ensuring the pipeline never queues stale images or leaks memory.
+* **Decoupled Capture Loop:** Modify `run()` so that encoded raw and overlay frames are queued via `queue_upload()` instead of using synchronous `self._post()`, allowing the webcam capture loop to spin at a solid 30 FPS.
+
+#### [MODIFY] [edge_pipeline.py](file:///d:/Projects/Sand-Mining_Detection/src/detection/edge_pipeline.py)
+* **Background Queue Uploader:** Implement a background uploader thread and thread-safe queue to decouple the simulated flight pipeline from HTTP posts.
+* **Dynamic Resolution Downscaling:** Set the canvas resolution to `1280x720` (instead of `1920x1080`) to significantly reduce network payload and JPEG encoding overhead.
+* **Session Keep-Alive:** Use `requests.Session` inside the uploader thread to reuse TCP connections.
+
+---
+
+## Verification Plan
+
+### Automated & Manual Verification
+1. **Server Boot:**
+   * Run the uvicorn server in uvicorn main mode:
+     ```powershell
+     python main.py server
+     ```
+   * Confirm uvicorn starts successfully, uvicorn's event loop is captured, and events are initialized without errors.
+
+2. **Webcam Feed Latency Testing:**
+   * Run the webcam pipeline:
+     ```powershell
+     python main.py webcam --fps 30
+     ```
+   * Check the dashboard logs and uvicorn console. The uvicorn `/api/edge/frame` POST requests should complete in **< 5ms** (down from 200ms+).
+   * Open the dashboard at `http://localhost:8000` and visually inspect the **Raw Video Feed** and **AI Overlay Feed** windows. Both feeds should render at a fluid, near-zero-latency rate.
+
+3. **Edge Pipeline Simulation:**
+   * Run the edge simulation pipeline:
+     ```powershell
+     python main.py edge
+     ```
+   * Verify that telemetry icons on the map move smoothly and frames stream without stalling the flight steps.
