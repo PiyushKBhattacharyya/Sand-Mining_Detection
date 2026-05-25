@@ -790,10 +790,7 @@ async def startup_event():
     source_desc = "RTSP: {}".format(VIDEO_SOURCE) if isinstance(VIDEO_SOURCE, str) else f"webcam {VIDEO_SOURCE}"
     logger.info("  Video capture thread launched ({})  dashboard feeds will populate shortly.".format(source_desc))
 
-    # Start the hybrid telemetry simulation loop if we are using the webcam or dummy (testing/emulation mode)
-    if isinstance(VIDEO_SOURCE, int) or VIDEO_SOURCE == "dummy":
-        asyncio.ensure_future(_webcam_telemetry_simulation_loop())
-        logger.info(" Launched dynamic hybrid flight telemetry simulator background task.")
+
 
 # Frame generator for multipart MJPEG streaming
 async def frame_generator(stream_type     ):
