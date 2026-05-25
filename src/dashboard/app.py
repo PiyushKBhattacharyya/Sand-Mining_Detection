@@ -119,18 +119,16 @@ CAMERA_QUALITY = int(os.getenv("CAMERA_QUALITY", "75"))
 RTSP_TRANSPORT = os.getenv("RTSP_TRANSPORT", "tcp")   # "tcp" | "udp"
 
 
+latest_bgr_frame = None
+frame_lock = threading.Lock()
+
 def _video_capture_loop():
     """
     Background daemon thread: opens the configured video source and continuously
-    pushes JPEG frames into latest_raw_frame / latest_overlay_frame.
-
-    Source is controlled by the VIDEO_SOURCE env var:
-       Integer   local webcam (testing mode)
-       URL str   RTSP stream from drone or IP camera (field deployment)
-
-    No restart needed just change VIDEO_SOURCE and reboot the server.
+    pushes raw BGR frames to latest_bgr_frame, and raw JPEG frames into latest_raw_frame.
+    It does NOT run YOLO inference, keeping frame acquisition extremely fast (30 FPS).
     """
-    global latest_raw_frame, latest_overlay_frame, latest_webcam_detections, _yolo_model, local_webcam_mode, last_webcam_frame_time
+    global latest_raw_frame, latest_overlay_frame, latest_webcam_detections, local_webcam_mode, last_webcam_frame_time, latest_bgr_frame
 
     try:
         import cv2
@@ -138,9 +136,6 @@ def _video_capture_loop():
         logger.warning("opencv-python not installed video feed disabled.")
         return
 
-    # We start with synthetic video fallback. The dynamic hot-swapping block
-    # inside the main loop will automatically trigger on the very first step
-    # to open the user's configured live RTMP/RTSP stream or webcam index dynamically!
     cap = None
     use_synthetic_video = True
     current_source = None
@@ -153,10 +148,6 @@ def _video_capture_loop():
 
     encode_params = [cv2.IMWRITE_JPEG_QUALITY, CAMERA_QUALITY]
     interval = 1.0 / CAMERA_FPS
-
-    # Track the active loaded model for the local server webcam feed
-    custom_weights = Path(__file__).resolve().parent.parent.parent / "models" / "weights" / "best.pt"
-    current_loaded_model_path = str(custom_weights) if custom_weights.exists() else "yolov8n.pt"
 
     consecutive_drops = 0
 
@@ -241,30 +232,6 @@ def _video_capture_loop():
                 time.sleep(0.06)
                 continue
 
-        # Dynamically hot-swap local YOLO model if operator changed it in the dropdown!
-        target_model_name = flight_config.get("active_model", "yolov8n.pt")
-        weights_dir = Path(__file__).resolve().parent.parent.parent / "models" / "weights"
-        weights_dir.mkdir(parents=True, exist_ok=True)
-        
-        if target_model_name == "best.pt":
-            target_path = str(weights_dir / "best.pt")
-            if not Path(target_path).exists():
-                target_path = str(weights_dir / "yolov8n.pt")
-        else:
-            target_path = str(weights_dir / target_model_name)
-
-        if current_loaded_model_path != target_path:
-            logger.info(" Swapping local server YOLO model: {} -> {}".format(current_loaded_model_path, target_path))
-            try:
-                from ultralytics import YOLO
-                _yolo_model = YOLO(target_path)
-                current_loaded_model_path = target_path
-                logger.info(" Local server YOLO model successfully swapped to: {}".format(target_model_name))
-            except Exception as e:
-                logger.error(" Failed to dynamic swap local YOLO model: {}".format(e))
-                # Prevent CPU-burning infinite retry loops on model loading failures:
-                current_loaded_model_path = target_path
-
         if use_synthetic_video:
             # Create a nice dark-blue grid background (simulating a tactical drone camera screen)
             frame = np.zeros((720, 1280, 3), dtype=np.uint8)
@@ -328,6 +295,10 @@ def _video_capture_loop():
             # Flip the frame horizontally to correct webcam mirroring
             frame = cv2.flip(frame, 1)
 
+        # Store in shared BGR buffer for the AI inference thread
+        with frame_lock:
+            latest_bgr_frame = frame.copy()
+
         _, buf = cv2.imencode(".jpg", frame, encode_params)
         jpeg = buf.tobytes()
 
@@ -337,7 +308,95 @@ def _video_capture_loop():
         if use_synthetic_video:
             latest_overlay_frame = jpeg
             latest_webcam_detections = []
-        elif _yolo_model is not None:
+
+        # Determine the final frame to write to the recording
+        recording_frame = frame
+
+        # Write to video recorder if active
+        global is_recording, recording_writer, recording_lock
+        if is_recording and not local_webcam_mode:
+            with recording_lock:
+                if recording_writer is not None:
+                    try:
+                        recording_writer.write(recording_frame)
+                    except Exception as e:
+                        logger.error("Error writing frame to recording: {}".format(e))
+
+        # Sleep throttling strategy:
+        # 1. Synthetic video needs sleep to match target FPS.
+        # 2. File playback needs sleep to match target FPS.
+        # 3. Live network streams (RTMP/RTSP) or Webcams do NOT sleep, as cap.read() blocks naturally to stream FPS.
+        if use_synthetic_video or is_file:
+            elapsed = time.time() - t0
+            sleep_for = interval - elapsed
+            if sleep_for > 0:
+                time.sleep(sleep_for)
+        else:
+            # Short sleep to prevent CPU hogging if capture stream drops or returns too fast
+            time.sleep(0.001)
+
+def _yolo_inference_loop():
+    """
+    Background daemon thread: periodically grabs the absolute latest BGR frame from
+    latest_bgr_frame, runs YOLO inference on it, and updates latest_overlay_frame.
+    This guarantees that the raw stream remains high-FPS (30 FPS), and the AI stream
+    never falls behind real-time or plays in slow-motion.
+    """
+    global latest_bgr_frame, latest_overlay_frame, latest_webcam_detections, _yolo_model, local_webcam_mode
+    try:
+        import cv2
+    except ImportError:
+        return
+
+    encode_params = [cv2.IMWRITE_JPEG_QUALITY, CAMERA_QUALITY]
+    
+    # Track the active loaded model for the local server webcam feed
+    custom_weights = Path(__file__).resolve().parent.parent.parent / "models" / "weights" / "best.pt"
+    current_loaded_model_path = str(custom_weights) if custom_weights.exists() else "yolov8n.pt"
+
+    while True:
+        # Sleep a tiny bit to avoid raw spinning when no frames are available
+        time.sleep(0.01)
+
+        if local_webcam_mode:
+            # If browser webcam mode is active, the browser pushes frame updates directly
+            # through receive_edge_frame which runs its own YOLO, so we skip here.
+            time.sleep(0.1)
+            continue
+
+        # Dynamically hot-swap local YOLO model if operator changed it in the dropdown!
+        target_model_name = flight_config.get("active_model", "yolov8n.pt")
+        weights_dir = Path(__file__).resolve().parent.parent.parent / "models" / "weights"
+        weights_dir.mkdir(parents=True, exist_ok=True)
+        
+        if target_model_name == "best.pt":
+            target_path = str(weights_dir / "best.pt")
+            if not Path(target_path).exists():
+                target_path = str(weights_dir / "yolov8n.pt")
+        else:
+            target_path = str(weights_dir / target_model_name)
+
+        if current_loaded_model_path != target_path:
+            logger.info(" Swapping local server YOLO model: {} -> {}".format(current_loaded_model_path, target_path))
+            try:
+                from ultralytics import YOLO
+                _yolo_model = YOLO(target_path)
+                current_loaded_model_path = target_path
+                logger.info(" Local server YOLO model successfully swapped to: {}".format(target_model_name))
+            except Exception as e:
+                logger.error(" Failed to dynamic swap local YOLO model: {}".format(e))
+                # Prevent CPU-burning infinite retry loops on model loading failures:
+                current_loaded_model_path = target_path
+
+        frame = None
+        with frame_lock:
+            if latest_bgr_frame is not None:
+                frame = latest_bgr_frame.copy()
+
+        if frame is None:
+            continue
+
+        if _yolo_model is not None:
             try:
                 # Detect person (0), car (2), motorcycle (3), bus (5), truck (7)
                 results = _yolo_model(
@@ -376,47 +435,16 @@ def _video_capture_loop():
                 latest_webcam_detections = active_dets
             except Exception as exc:
                 logger.debug("YOLO inference error: {}".format(exc))
-                latest_overlay_frame = jpeg   # fallback: show raw if inference crashes
+                # Fallback to raw frame on inference error
+                _, obuf = cv2.imencode(".jpg", frame, encode_params)
+                latest_overlay_frame = obuf.tobytes()
                 latest_webcam_detections = []
         else:
-            latest_overlay_frame = jpeg   # no model loaded  mirror raw feed
+            # No model loaded, mirror raw frame
+            _, obuf = cv2.imencode(".jpg", frame, encode_params)
+            latest_overlay_frame = obuf.tobytes()
             latest_webcam_detections = []
 
-        # Determine the final frame to write to the recording
-        recording_frame = frame
-        if use_synthetic_video and is_at_starting_spot() and is_inside_fence():
-            try:
-                recording_frame = overlay
-            except NameError:
-                pass
-        elif _yolo_model is not None and is_at_starting_spot() and is_inside_fence():
-            try:
-                recording_frame = overlay
-            except NameError:
-                pass
-
-        # Write to video recorder if active
-        global is_recording, recording_writer, recording_lock
-        if is_recording and not local_webcam_mode:
-            with recording_lock:
-                if recording_writer is not None:
-                    try:
-                        recording_writer.write(recording_frame)
-                    except Exception as e:
-                        logger.error("Error writing frame to recording: {}".format(e))
-
-        # Sleep throttling strategy:
-        # 1. Synthetic video needs sleep to match target FPS.
-        # 2. File playback needs sleep to match target FPS.
-        # 3. Live network streams (RTMP/RTSP) or Webcams do NOT sleep, as cap.read() blocks naturally to stream FPS.
-        if use_synthetic_video or is_file:
-            elapsed = time.time() - t0
-            sleep_for = interval - elapsed
-            if sleep_for > 0:
-                time.sleep(sleep_for)
-        else:
-            # Short sleep to prevent CPU hogging if capture stream drops or returns too fast
-            time.sleep(0.001)
 
 # Mount the project's data directory so the frontend can directly load spatial GeoJSON files
 app.mount("/data", StaticFiles(directory=str(Path(__file__).resolve().parent.parent.parent / "data")), name="data")
@@ -852,12 +880,16 @@ async def startup_event():
         logger.warning("  YOLO failed to load  overlay will mirror raw feed. Error: {}".format(e))
         _yolo_model = None
 
-    #  Start video capture thread AFTER model is ready 
+    #  Start video capture and YOLO inference threads AFTER model is ready 
     # Ensures first frames already have a model to run against.
     t = threading.Thread(target=_video_capture_loop, daemon=True, name="video-capture")
     t.start()
+    
+    t_yolo = threading.Thread(target=_yolo_inference_loop, daemon=True, name="yolo-inference")
+    t_yolo.start()
+    
     source_desc = "RTSP: {}".format(VIDEO_SOURCE) if isinstance(VIDEO_SOURCE, str) else f"webcam {VIDEO_SOURCE}"
-    logger.info("  Video capture thread launched ({})  dashboard feeds will populate shortly.".format(source_desc))
+    logger.info("  Video capture and YOLO inference threads launched ({})  dashboard feeds will populate shortly.".format(source_desc))
 
     # Start the fallback telemetry loop so manual map clicks can place the drone!
     asyncio.ensure_future(_telemetry_fallback_broadcast_loop())
