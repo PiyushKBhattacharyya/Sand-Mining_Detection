@@ -1830,11 +1830,34 @@
                         // Move the circle boundary along with the marker
                         startGeofenceCircle.setLatLng(position);
                     });
+
+                    // Trigger auto-sync when drag finishes
+                    startGeofenceMarker.on('dragend', function (e) {
+                        const position = startGeofenceMarker.getLatLng();
+                        updateGeofenceVisuals(position);
+                    });
                 }
 
                 // Update HUD input text values
                 latInput.value = latlng.lat.toFixed(5);
                 lonInput.value = latlng.lng.toFixed(5);
+
+                // Auto-Sync directly to VPS on click or drag refinement
+                try {
+                    const payload = {
+                        active_model: modelSelect.value || "yolov8n.pt",
+                        start_lat: latlng.lat,
+                        start_lng: latlng.lng,
+                        start_radius_meters: parseFloat(radiusSelect.value) || 500.0,
+                        video_source: "rtmp://187.127.142.58:1935/live/drone",
+                        detection_enabled: true
+                    };
+                    fetch(BASE_PATH + 'api/flight/config', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    }).catch(err => console.debug("Map-click auto sync skipped:", err));
+                } catch(e) {}
             }
 
             // Load initial flight parameters from server database on startup
@@ -2108,6 +2131,58 @@
         if (btnRefreshGallery) {
             btnRefreshGallery.addEventListener('click', () => loadGalleryData());
         }
+
+        // HTML5 Browser Geolocation Auto-Detection Fallback
+        // Automatically syncs starting geofence to IIT Guwahati or user's exact coordinate on load
+        // so drone pin appears instantly without manual clicks!
+        (function initAutomaticGeolocationSync() {
+            window.addEventListener('DOMContentLoaded', () => {
+                setTimeout(() => {
+                    if (navigator.geolocation) {
+                        navigator.geolocation.getCurrentPosition(
+                            (position) => {
+                                const lat = position.coords.latitude;
+                                const lon = position.coords.longitude;
+                                console.log(`[GEOLOCATION] Auto-detected operator location: ${lat}, ${lon}`);
+                                
+                                // Auto-update HUD input fields
+                                const latInput = document.getElementById('geofence-lat');
+                                const lonInput = document.getElementById('geofence-lon');
+                                if (latInput && lonInput) {
+                                    latInput.value = lat.toFixed(5);
+                                    lonInput.value = lon.toFixed(5);
+                                }
+                                
+                                // POST this directly to VPS to auto-trigger fallback telemetry broadcast
+                                const payload = {
+                                    active_model: document.getElementById('model-select')?.value || "yolov8n.pt",
+                                    start_lat: lat,
+                                    start_lng: lon,
+                                    start_radius_meters: 500.0,
+                                    video_source: "rtmp://187.127.142.58:1935/live/drone",
+                                    detection_enabled: true
+                                };
+                                
+                                fetch(BASE_PATH + 'api/flight/config', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(payload)
+                                })
+                                .then(r => r.json())
+                                .then(res => {
+                                    console.log("[GEOLOCATION] Config sync complete. Telemetry fallback active.");
+                                })
+                                .catch(err => console.debug("Auto-geolocate sync skipped:", err));
+                            },
+                            (error) => {
+                                console.debug("Browser geolocation declined/failed. Standing by for manual map clicks.", error);
+                            },
+                            { enableHighAccuracy: true, timeout: 5000 }
+                        );
+                    }
+                }, 2000); // 2 second delay to let Leaflet map finish drawing bounds
+            });
+        })();
 
         // Initialize
         checkAuthStatus();
