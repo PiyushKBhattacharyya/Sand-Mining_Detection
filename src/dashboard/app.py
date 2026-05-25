@@ -518,6 +518,59 @@ yolo_lock = None
 # Global ClusterEngine for runtime buffer size synchronization
 global_cluster_engine = None
 
+async def _telemetry_fallback_broadcast_loop():
+    """
+    WHAT: Fallback task that periodically broadcasts the drone's position to WebSockets
+    if the operator has manually set geofence start coordinates but no real telemetry
+    relayer is active.
+    WHY: Allows operators using standard DJI Pilot/Fly apps (without custom API relay subs)
+    to set the drone location by double-clicking on the map!
+    """
+    global latest_drone_coords, flight_config, manager
+    await asyncio.sleep(4.0)  # Wait for startup and uvicorn bind
+    
+    # We initialize the server-side cluster engine here as well to ensure
+    # geofence and enforcement logic functions seamlessly if webcam/real streams trigger incidents
+    global global_cluster_engine, db_manager, active_buffer_radius_m
+    if global_cluster_engine is None:
+        try:
+            # pyrefly: ignore [missing-import]
+            from cluster_engine import ClusterEngine
+            global_cluster_engine = ClusterEngine(db_manager=db_manager)
+            global_cluster_engine.set_radius(active_buffer_radius_m)
+        except Exception as e:
+            logger.debug(f"Failed to initialize cluster engine: {e}")
+
+    import datetime
+    while True:
+        try:
+            start_lat = float(flight_config.get("start_lat", 0.0))
+            start_lng = float(flight_config.get("start_lng", 0.0))
+            
+            # If a geofence location is applied, and we have received NO active telemetry packets
+            # from a real physical relayer/companion app yet (latest_drone_coords is 0.0)
+            if start_lat != 0.0 and start_lng != 0.0 and latest_drone_coords.get("lat", 0.0) == 0.0:
+                # Mirror the geofence starting spot as the active drone coordinate!
+                latest_drone_coords["lat"] = start_lat
+                latest_drone_coords["lon"] = start_lng
+                
+                # Broadcast this mock telemetry packet to place the blue marker and update status widgets!
+                tele_payload = {
+                    "type": "telemetry",
+                    "payload": {
+                        "timestamp": datetime.datetime.now().isoformat(),
+                        "lat": start_lat,
+                        "lon": start_lng,
+                        "altitude": 70.0,
+                        "speed": 0.0,
+                        "battery": 95
+                    }
+                }
+                await manager.broadcast(tele_payload)
+        except Exception as e:
+            logger.debug(f"Telemetry fallback loop: {e}")
+        await asyncio.sleep(1.0)
+
 async def _webcam_telemetry_simulation_loop():
     global latest_webcam_detections, db_manager, active_buffer_radius_m, global_cluster_engine
     
@@ -789,6 +842,9 @@ async def startup_event():
     t.start()
     source_desc = "RTSP: {}".format(VIDEO_SOURCE) if isinstance(VIDEO_SOURCE, str) else f"webcam {VIDEO_SOURCE}"
     logger.info("  Video capture thread launched ({})  dashboard feeds will populate shortly.".format(source_desc))
+
+    # Start the fallback telemetry loop so manual map clicks can place the drone!
+    asyncio.ensure_future(_telemetry_fallback_broadcast_loop())
 
 
 
