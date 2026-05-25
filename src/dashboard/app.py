@@ -158,6 +158,8 @@ def _video_capture_loop():
     custom_weights = Path(__file__).resolve().parent.parent.parent / "models" / "weights" / "best.pt"
     current_loaded_model_path = str(custom_weights) if custom_weights.exists() else "yolov8n.pt"
 
+    consecutive_drops = 0
+
     while True:
         t0 = time.time()
 
@@ -301,12 +303,26 @@ def _video_capture_loop():
 
         if not ret:
             if is_rtsp:
-                # RTSP can drop temporarily (drone banking, interference)  keep retrying
-                logger.warning("  RTSP frame drop  retrying...")
-                time.sleep(0.1)
+                consecutive_drops += 1
+                if consecutive_drops > 25:
+                    logger.warning("  RTMP/RTSP stream disconnected. Resetting stream client for automatic reconnection...")
+                    if cap is not None:
+                        try:
+                            cap.release()
+                        except Exception:
+                            pass
+                    cap = None
+                    current_source = None
+                    consecutive_drops = 0
+                    time.sleep(2.0)
+                else:
+                    logger.warning("  RTSP frame drop  retrying...")
+                    time.sleep(0.1)
             else:
                 time.sleep(0.05)
             continue
+
+        consecutive_drops = 0
 
         if not use_synthetic_video:
             # Flip the frame horizontally to correct webcam mirroring
