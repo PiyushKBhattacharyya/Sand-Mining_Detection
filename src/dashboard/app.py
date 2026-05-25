@@ -194,9 +194,14 @@ def _video_capture_loop():
                     is_file = isinstance(target_source, str) and not is_rtsp
 
                     if is_rtsp:
-                        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;" + str(RTSP_TRANSPORT)
-                        logger.info("  Connecting to dynamic drone stream: {} (transport={})".format(target_source, RTSP_TRANSPORT))
+                        # Build low-latency FFMPEG options: disable buffering, reduce probe size/duration
+                        opts = f"rtsp_transport;{RTSP_TRANSPORT}|fflags;nobuffer|flags;low_delay|probesize;32|analyzeduration;0"
+                        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = opts
+                        logger.info("  Connecting to dynamic drone stream: {} (transport={} with low-delay)".format(target_source, RTSP_TRANSPORT))
                         cap = cv2.VideoCapture(target_source, cv2.CAP_FFMPEG)
+                        if cap is not None and cap.isOpened():
+                            # Set internal buffer size to 1 to prevent frame queuing lag
+                            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                     elif is_file:
                         logger.info("  Opening dynamic video file: {}...".format(target_source))
                         cap = cv2.VideoCapture(target_source)
@@ -204,6 +209,7 @@ def _video_capture_loop():
                         logger.info("  Starting dynamic webcam camera index {}...".format(target_source))
                         cap = cv2.VideoCapture(target_source)
                         if cap is not None and cap.isOpened():
+                            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                             cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
                             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
@@ -383,10 +389,18 @@ def _video_capture_loop():
                     except Exception as e:
                         logger.error("Error writing frame to recording: {}".format(e))
 
-        elapsed = time.time() - t0
-        sleep_for = interval - elapsed
-        if sleep_for > 0:
-            time.sleep(sleep_for)
+        # Sleep throttling strategy:
+        # 1. Synthetic video needs sleep to match target FPS.
+        # 2. File playback needs sleep to match target FPS.
+        # 3. Live network streams (RTMP/RTSP) or Webcams do NOT sleep, as cap.read() blocks naturally to stream FPS.
+        if use_synthetic_video or is_file:
+            elapsed = time.time() - t0
+            sleep_for = interval - elapsed
+            if sleep_for > 0:
+                time.sleep(sleep_for)
+        else:
+            # Short sleep to prevent CPU hogging if capture stream drops or returns too fast
+            time.sleep(0.001)
 
 # Mount the project's data directory so the frontend can directly load spatial GeoJSON files
 app.mount("/data", StaticFiles(directory=str(Path(__file__).resolve().parent.parent.parent / "data")), name="data")

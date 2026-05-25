@@ -661,11 +661,7 @@
                     </svg>
                     <span id="user-display">Operator</span>
                 </div>
-                <button id="btn-browser-webcam" class="map-btn"
-                    style="padding: 4px 10px; font-size: 11px; margin: 0; background: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.3); color: #60a5fa; border-radius: 6px; cursor: pointer; font-family: inherit; font-weight: 600; display: flex; align-items: center; gap: 4px;">
-                    <span id="webcam-btn-dot" style="width:6px; height:6px; border-radius:50%; background:#60a5fa; display:inline-block;"></span>
-                    <span>Use Browser Camera</span>
-                </button>
+
                 <button id="btn-logout" class="map-btn"
                     style="padding: 4px 10px; font-size: 11px; margin: 0; background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.3); color: #f87171; border-radius: 6px; cursor: pointer; font-family: inherit; font-weight: 600;">
                     Logout
@@ -737,8 +733,7 @@
                                 style="flex:1; background:#111827; display:flex; align-items:center; justify-content:center; position:relative;">
                                 <img id="img-stream-raw" src="" alt="Raw Drone Feed"
                                     style="width:100%; height:100%; object-fit:cover; aspect-ratio:16/9;" />
-                                <video id="webcam-video" autoplay playsinline muted
-                                    style="display:none; width:100%; height:100%; object-fit:cover; aspect-ratio:16/9; position:absolute; top:0; left:0;"></video>
+
                             </div>
                         </div>
 
@@ -1196,120 +1191,7 @@
         document.getElementById('img-stream-raw').src = BASE_PATH + 'stream/raw';
         document.getElementById('img-stream-overlay').src = BASE_PATH + 'stream/overlay';
 
-        // Browser webcam capture, display, and VPS HTTP frames relay loop!
-        // This is exact local webcam integration directly inside the user's browser,
-        // sending real-time frames to the VPS for YOLO processing and live DB incident capturing/evidence saving!
-        (function initBrowserWebcamRelay() {
-            const btnCam = document.getElementById('btn-browser-webcam');
-            const dot = document.getElementById('webcam-btn-dot');
-            const videoEl = document.getElementById('webcam-video');
-            const imgRaw = document.getElementById('img-stream-raw');
-            
-            let stream = null;
-            let active = false;
-            let timer = null;
 
-            btnCam.addEventListener('click', async () => {
-                if (active) {
-                    stopWebcam();
-                } else {
-                    await startWebcam();
-                }
-            });
-
-            async function startWebcam() {
-                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                    alert(
-                        "Browser Security Restriction (Insecure Origin)\n\n" +
-                        "All modern browsers (Safari, Chrome, Firefox) strictly block camera access on plain HTTP connections (http://187.127.142.58).\n\n" +
-                        "To use your camera on the VPS, choose ONE of these two easy developer bypasses:\n\n" +
-                        "Option A (Instant Developer Bypass - RECOMMENDED):\n" +
-                        "Run this command in your Mac terminal to forward the port securely:\n" +
-                        "   ssh -N -L 8000:localhost:8000 -p 2222 root@187.127.142.58\n" +
-                        "Then open: http://localhost:8000/sand-mining/\n" +
-                        "(Browsers treat 'localhost' as 100% secure, so camera access works instantly!)\n\n" +
-                        "Option B (Configure Domain & SSL):\n" +
-                        "Add an A Record in Hostinger for sandmining.nielitbhubaneswar.in pointing to 187.127.142.58, then run 'certbot --nginx' on the VPS to enable secure HTTPS."
-                    );
-                    stopWebcam();
-                    return;
-                }
-                try {
-                    stream = await navigator.mediaDevices.getUserMedia({
-                        video: { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 15 } },
-                        audio: false
-                    });
-                    videoEl.srcObject = stream;
-                    videoEl.style.display = 'block';
-                    imgRaw.style.display = 'none'; // Overlap raw image with actual local webcam display element for zero latency!
-                    
-                    active = true;
-                    btnCam.style.background = 'rgba(16, 185, 129, 0.15)';
-                    btnCam.style.borderColor = 'rgba(16, 185, 129, 0.3)';
-                    btnCam.style.color = '#34d399';
-                    dot.style.background = '#34d399';
-                    btnCam.querySelector('span:not(#webcam-btn-dot)').textContent = 'Browser Camera: ON';
-
-                    // Launch frame relay loop (12-15 FPS)
-                    const canvas = document.createElement('canvas');
-                    canvas.width = 640;
-                    canvas.height = 360;
-                    const ctx = canvas.getContext('2d');
-
-                    timer = setInterval(() => {
-                        if (videoEl.readyState === videoEl.HAVE_CURRENT_DATA || videoEl.readyState === videoEl.HAVE_ENOUGH_DATA) {
-                            // Flip canvas horizontally to correct mirroring on the uploaded stream
-                            ctx.save();
-                            ctx.translate(canvas.width, 0);
-                            ctx.scale(-1, 1);
-                            ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-                            ctx.restore();
-
-                            canvas.toBlob((blob) => {
-                                if (blob) {
-                                    fetch(BASE_PATH + 'api/edge/frame?stream_type=raw', {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'image/jpeg' },
-                                        body: blob
-                                    }).catch(err => console.debug('Webcam POST upload dropped:', err));
-                                }
-                            }, 'image/jpeg', 0.70);
-                        }
-                    }, 80); // Send frame every 80ms (~12 FPS)
-                } catch (err) {
-                    alert('Could not access browser webcam: ' + err.message + '\nMake sure camera permission is granted in your browser settings.');
-                    stopWebcam();
-                }
-            }
-
-            function stopWebcam() {
-                if (timer) {
-                    clearInterval(timer);
-                    timer = null;
-                }
-                if (stream) {
-                    stream.getTracks().forEach(track => track.stop());
-                    stream = null;
-                }
-                videoEl.srcObject = null;
-                videoEl.style.display = 'none';
-                imgRaw.style.display = 'block';
-
-                active = false;
-                btnCam.style.background = 'rgba(59, 130, 246, 0.15)';
-                btnCam.style.borderColor = 'rgba(59, 130, 246, 0.3)';
-                btnCam.style.color = '#60a5fa';
-                dot.style.background = '#60a5fa';
-                btnCam.querySelector('span:not(#webcam-btn-dot)').textContent = 'Use Browser Camera';
-            }
-            
-            // Auto-trigger webcam start immediately on page load so it's a completely seamless out-of-the-box experience!
-            window.addEventListener('DOMContentLoaded', () => {
-                setTimeout(() => {
-                    startWebcam().catch(e => console.log('Auto-start webcam blocked until interaction:', e));
-                }, 1000);
-            });
-        })();
 
         // DOM Handles
         const tabTactical = document.getElementById('tab-tactical');
