@@ -67,15 +67,15 @@ class EdgePipeline:
         self.running = False
         self.frame_w, self.frame_h = 1920, 1080  # 1080p canvas for performance
 
-        # Offline-first sync worker — starts as daemon, retries with backoff
+        # Offline-first sync worker  starts as daemon, retries with backoff
         self.sync_worker = SyncWorker(
             db_manager=self.db_manager,
             cloud_url=self.cloud_url,
             sync_interval_s=5.0
         )
 
-        # ── WHAT: NEW ACTIVE PARAMETERS FOR PRODUCT LEVEL DEPLOYMENT ──────
-        # ── WHY: Tracks dynamically loaded models and geofence states.
+        #  WHAT: NEW ACTIVE PARAMETERS FOR PRODUCT LEVEL DEPLOYMENT 
+        #  WHY: Tracks dynamically loaded models and geofence states.
         self.yolo_model = None
         self.active_model_name = None
         
@@ -90,12 +90,12 @@ class EdgePipeline:
         self.dynamic_path_generated = False
         self.current_flight_idx = 0
 
-    def load_yolo_model(self, model_name: str):
+    def load_yolo_model(self, model_name):
         """Dynamically loads/swaps the active YOLO model weights mid-flight."""
         if self.active_model_name == model_name and self.yolo_model is not None:
             return  # Already loaded
             
-        logger.info(f"🔄 Switching model mid-flight: {self.active_model_name} -> {model_name}")
+        logger.info(f" Switching model mid-flight: {self.active_model_name} -> {model_name}")
         try:
             from ultralytics import YOLO
             weights_path = Path(__file__).resolve().parent.parent.parent / "models" / "weights" / model_name
@@ -107,11 +107,11 @@ class EdgePipeline:
                 self.yolo_model = YOLO(model_name)
                 
             self.active_model_name = model_name
-            logger.info(f"✅ Active model successfully switched to: {model_name}")
+            logger.info(f" Active model successfully switched to: {model_name}")
         except Exception as e:
-            logger.error(f"❌ Failed to load model weights {model_name}: {e}")
+            logger.error(f" Failed to load model weights {model_name}: {e}")
 
-    def check_geofence_trigger(self, drone_lat: float, drone_lon: float) -> bool:
+    def check_geofence_trigger(self, drone_lat, drone_lon):
         """Calculates distance to starting point and returns True if inside start geofence."""
         if self.start_lat == 0.0 or self.start_lon == 0.0:
             return False
@@ -128,7 +128,7 @@ class EdgePipeline:
         distance_meters = 6371000.0 * c  # Earth radius ~6,371,000 meters
         return distance_meters <= self.start_radius
 
-    def generate_simulated_detections(self, drone_lat: float, drone_lon: float, step: int) -> List[Dict[str, Any]]:
+    def generate_simulated_detections(self, drone_lat, drone_lon, step):
         """
         Periodically generates mock illegal sand mining target clusters in the field of view:
         e.g., Trucks, Excavators (JCBs), and Workers.
@@ -212,7 +212,7 @@ class EdgePipeline:
         random.seed()
         return detections
 
-    def draw_edge_overlay_canvas(self, telemetry: Dict[str, Any], detections: List[Dict[str, Any]], step: int) -> Tuple[bytes, bytes]:
+    def draw_edge_overlay_canvas(self, telemetry, detections, step):
         """
         Creates two beautiful simulated video feeds on the Jetson Nano:
         1. Raw Video: Simulated high-altitude orthophoto ground background with altimeter overlays.
@@ -316,7 +316,7 @@ class EdgePipeline:
                 if not self.running:
                     break
                     
-                # ── A. GET CONFIG FROM VPS (MID-FLIGHT UPDATE) ──
+                #  A. GET CONFIG FROM VPS (MID-FLIGHT UPDATE) 
                 if step % 5 == 0:
                     try:
                         r = requests.get(f"{self.cloud_url}/api/flight/config", timeout=0.5)
@@ -328,7 +328,7 @@ class EdgePipeline:
                             self.start_radius      = cfg.get("start_radius_meters", self.start_radius)
                             self.detection_enabled = cfg.get("detection_enabled", self.detection_enabled)
                             
-                            # ── DYNAMIC TEST PATH TRIGGER ──
+                            #  DYNAMIC TEST PATH TRIGGER 
                             # WHAT: If a start geofence coordinate is received and we haven't generated our 
                             # launch-to-target path yet, generate it now!
                             # WHY: Triggers takeoff simulation from random starting coordinates.
@@ -377,7 +377,7 @@ class EdgePipeline:
                     'speed': speed, 'heading': heading, 'timestamp': timestamp, 'battery': int(battery)
                 }
 
-                # ── B. GEOFENCED INFERENCE FILTER (NO HARDCODING) ──
+                #  B. GEOFENCED INFERENCE FILTER (NO HARDCODING) 
                 is_active = self.check_geofence_trigger(lat, lon) and self.detection_enabled
                 
                 raw_detections = []
@@ -428,7 +428,7 @@ class EdgePipeline:
                             except Exception as e:
                                 logger.debug(f"Evidence path DB update: {e}")
 
-                # 6. Cloud Streaming (best-effort — sync_worker handles reliable retry)
+                # 6. Cloud Streaming (best-effort  sync_worker handles reliable retry)
                 # Try to POST real-time frames & telemetry updates to FastAPI server
                 try:
                     # Upload Raw Video Frame
@@ -499,5 +499,11 @@ class EdgePipeline:
             logger.info("Edge Pipeline shut down successfully.")
 
 if __name__ == "__main__":
-    pipeline = EdgePipeline(cloud_url="http://localhost:8000")
+    try:
+        sys.path.insert(0, str(project_root))
+        from config import CLOUD_URL
+    except ImportError:
+        CLOUD_URL = os.getenv("CLOUD_URL", "http://localhost:8000")
+        
+    pipeline = EdgePipeline(cloud_url=CLOUD_URL)
     pipeline.run_pipeline(steps=120)

@@ -1,4 +1,4 @@
-# 🛸 Implementation Phases: Illegal Sand Mining Detection
+#  Implementation Phases: Illegal Sand Mining Detection
 
 This document breaks down the high-level roadmap into actionable, code-level implementation steps. Each phase produces a tangible deliverable.
 

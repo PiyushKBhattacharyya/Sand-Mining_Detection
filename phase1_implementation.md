@@ -1,4 +1,4 @@
-# 🚀 Phase 1: Environment Setup & GIS Foundations
+#  Phase 1: Environment Setup & GIS Foundations
 
 This phase sets up the core project structure, installs necessary dependencies, and creates the most critical GIS component: the script to generate a **0.5 km (500 meter) buffer** around the river to define the illegal mining zone.
 
@@ -10,21 +10,21 @@ We have created the following directory structure in your workspace:
 
 ```text
 Sand-Mining_Detection/
-├── data/
-│   ├── raw/                  # For raw drone imagery/video
-│   ├── processed/            # For orthomosaics and extracted frames
-│   ├── annotations/          # For YOLO label txt files
-│   └── legal_zones/          # For river shapefiles and generated buffers
-├── models/
-│   └── weights/              # For trained YOLO .pt and .onnx files
-├── notebooks/                # For Jupyter notebooks (exploration)
-├── src/
-│   ├── preprocess/           # Data preparation and GIS scripts
-│   ├── detection/            # YOLO inference, tracking, clustering
-│   ├── reporting/            # Report generation (JSON/PDF)
-│   └── dashboard/
-│       └── frontend/         # Web UI
-└── requirements.txt          # Python dependencies
+ data/
+    raw/                  # For raw drone imagery/video
+    processed/            # For orthomosaics and extracted frames
+    annotations/          # For YOLO label txt files
+    legal_zones/          # For river shapefiles and generated buffers
+ models/
+    weights/              # For trained YOLO .pt and .onnx files
+ notebooks/                # For Jupyter notebooks (exploration)
+ src/
+    preprocess/           # Data preparation and GIS scripts
+    detection/            # YOLO inference, tracking, clustering
+    reporting/            # Report generation (JSON/PDF)
+    dashboard/
+        frontend/         # Web UI
+ requirements.txt          # Python dependencies
 ```
 
 ---
@@ -109,7 +109,7 @@ def create_river_buffer(input_path: str, output_path: str, buffer_meters: int = 
     
     # Save as GeoJSON for easy web integration (Leaflet) later
     final_gdf.to_file(out_file, driver="GeoJSON")
-    print(f"✅ Success! Buffer saved to: {out_file}")
+    print(f" Success! Buffer saved to: {out_file}")
 
 if __name__ == "__main__":
     # Define paths
@@ -125,7 +125,7 @@ if __name__ == "__main__":
             buffer_meters=500
         )
     else:
-        print(f"❌ Error: Could not find input file at {INPUT_RIVER_FILE}")
+        print(f" Error: Could not find input file at {INPUT_RIVER_FILE}")
         print("Please place your river boundary file there and update the script if the name differs.")
 ```
 

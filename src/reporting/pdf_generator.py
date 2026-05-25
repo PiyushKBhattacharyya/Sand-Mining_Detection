@@ -13,13 +13,13 @@ from typing import List, Dict, Any, Optional
 from io import BytesIO
 
 from fpdf import FPDF, XPos, YPos
-from fpdf.enums import TableCellFillMode
+# from fpdf.enums import TableCellFillMode
 
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
-# Severity → RGB color
+# Severity  RGB color
 SEVERITY_COLORS = {
     "CRITICAL": (220, 38,  38),   # Red
     "HIGH":     (234, 88,  12),   # Orange
@@ -36,7 +36,7 @@ class IncidentReportPDF(FPDF):
     BRAND_WHITE = (230, 236, 248)
     BRAND_GRAY  = (100, 116, 139)
 
-    def __init__(self, mission_id: str = "BRH-01"):
+    def __init__(self, mission_id = "BRH-01"):
         super().__init__(orientation="P", unit="mm", format="A4")
         self.mission_id  = mission_id
         self.report_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -59,7 +59,7 @@ class IncidentReportPDF(FPDF):
         self.cell(0, 6, f"Page {self.page_no()}/{{nb}}  |  Generated: {self.report_time}", align="C")
 
 
-def _section_title(pdf: IncidentReportPDF, title: str):
+def _section_title(pdf, title):
     pdf.set_fill_color(16, 24, 50)
     pdf.set_text_color(0, 220, 255)
     pdf.set_font("Helvetica", "B", 10)
@@ -69,10 +69,10 @@ def _section_title(pdf: IncidentReportPDF, title: str):
 
 
 def generate_incident_report(
-    incidents: List[Dict[str, Any]],
-    output_path: Optional[Path] = None,
-    mission_id: str = "BRH-01"
-) -> bytes:
+    incidents,
+    output_path = None,
+    mission_id = "BRH-01"
+):
     """
     Generates a full PDF report and returns raw bytes.
     Also saves to output_path if provided.
@@ -82,7 +82,7 @@ def generate_incident_report(
     pdf = IncidentReportPDF(mission_id=mission_id)
     pdf.alias_nb_pages()
 
-    # ── Cover Page ────────────────────────────────────────────────────────────
+    #  Cover Page 
     pdf.add_page()
 
     # Title block
@@ -132,7 +132,7 @@ def generate_incident_report(
                  new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.ln(1)
 
-    # ── Incident Table ────────────────────────────────────────────────────────
+    #  Incident Table 
     pdf.add_page()
     _section_title(pdf, "DETECTED INCIDENTS LOG")
 
@@ -184,7 +184,7 @@ def generate_incident_report(
                 pdf.cell(w, 7, v, border=0, fill=True, align="C")
         pdf.ln()
 
-    # ── Evidence Image Gallery ────────────────────────────────────────────────
+    #  Evidence Image Gallery 
     evidence_dir = PROJECT_ROOT / "data" / "detections"
     evidence_files = sorted(evidence_dir.glob("evidence_*.jpg"))
 
@@ -224,9 +224,9 @@ def generate_incident_report(
                 col = 0
                 pdf.ln(img_h + 8)
 
-    # ── GPS Coordinates Appendix ───────────────────────────────────────────────
+    #  GPS Coordinates Appendix 
     pdf.add_page()
-    _section_title(pdf, "GPS COORDINATES — INCIDENT SITES")
+    _section_title(pdf, "GPS COORDINATES  INCIDENT SITES")
     pdf.set_font("Courier", "", 8)
     pdf.set_text_color(180, 200, 230)
 

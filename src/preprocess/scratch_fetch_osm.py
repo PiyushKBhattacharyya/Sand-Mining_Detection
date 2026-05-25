@@ -124,7 +124,7 @@ def save_geojson(coordinates, path):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(geojson, f, indent=2)
-    logger.info(f"✅ Saved highly accurate centerline GeoJSON to: {out_path}")
+    logger.info(f" Saved highly accurate centerline GeoJSON to: {out_path}")
 
 if __name__ == "__main__":
     coords = fetch_brahmaputra_centerline()

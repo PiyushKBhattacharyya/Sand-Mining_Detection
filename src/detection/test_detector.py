@@ -20,27 +20,27 @@ try:
 except Exception:
     pass
 
-def run_inference(image_path: str, weights_path: str, output_path: str, apply_colormap: bool = False):
+def run_inference(image_path, weights_path, output_path, apply_colormap = False):
     path = Path(image_path)
     if not path.exists():
-        print(f"❌ Error: Image not found at {image_path}")
+        print(f" Error: Image not found at {image_path}")
         sys.exit(1)
 
     # 1. Load image (supports grayscale/thermal and RGB)
     # cv2.IMREAD_UNCHANGED keeps original channels
     img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
     if img is None:
-        print("❌ Error: Could not decode image.")
+        print(" Error: Could not decode image.")
         sys.exit(1)
 
-    print(f"ℹ️ Loaded image of shape: {img.shape}")
+    print(f" Loaded image of shape: {img.shape}")
 
     # 2. Preprocess Thermal/Grayscale/BGRA to 3-Channel BGR for YOLOv8
     if len(img.shape) == 3 and img.shape[2] == 4:
-        print("ℹ️ 4-channel (RGBA/BGRA) image detected. Stripping alpha channel...")
+        print(" 4-channel (RGBA/BGRA) image detected. Stripping alpha channel...")
         img_bgr = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
     elif len(img.shape) == 2 or img.shape[2] == 1:
-        print("🔥 Grayscale/Thermal image detected. Converting to 3-channel BGR...")
+        print(" Grayscale/Thermal image detected. Converting to 3-channel BGR...")
         if apply_colormap:
             img_bgr = cv2.applyColorMap(img, cv2.COLORMAP_JET)
         else:
@@ -49,7 +49,7 @@ def run_inference(image_path: str, weights_path: str, output_path: str, apply_co
         img_bgr = img
 
     # 3. Load YOLO model
-    print(f"🤖 Loading YOLO model with weights: {weights_path}")
+    print(f" Loading YOLO model with weights: {weights_path}")
     model = YOLO(weights_path)
 
     # 4. Run inference
@@ -58,7 +58,7 @@ def run_inference(image_path: str, weights_path: str, output_path: str, apply_co
 
     # 5. Parse and print results
     boxes = result.boxes
-    print(f"\n🎯 Detections: {len(boxes)}")
+    print(f"\n Detections: {len(boxes)}")
     for i, box in enumerate(boxes):
         cls_id = int(box.cls[0].item())
         cls_name = model.names[cls_id]
@@ -71,7 +71,7 @@ def run_inference(image_path: str, weights_path: str, output_path: str, apply_co
     out_p = Path(output_path)
     out_p.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(out_p), annotated_img)
-    print(f"✅ Success! Saved annotated result to: {out_p}")
+    print(f" Success! Saved annotated result to: {out_p}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="RGB/Thermal YOLOv8 Tester")

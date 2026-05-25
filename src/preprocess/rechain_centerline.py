@@ -1,7 +1,7 @@
 """
 Re-chains the existing 68 OSM points into proper river flow order
 using nearest-neighbor path finding from the westernmost start point.
-No network needed — works entirely on the cached geojson.
+No network needed  works entirely on the cached geojson.
 """
 import json
 import math
@@ -39,7 +39,7 @@ while unvisited:
     last = chain[-1]
     # Find nearest unvisited point
     nearest = min(unvisited, key=lambda p: haversine_m(last[1], last[0], p[1], p[0]))
-    # Safety: if nearest is more than 8km away, something is wrong — stop
+    # Safety: if nearest is more than 8km away, something is wrong  stop
     dist = haversine_m(last[1], last[0], nearest[1], nearest[0])
     if dist > 8000:
         print(f"  Gap of {dist:.0f}m detected at {last} -> {nearest}, stopping chain")
@@ -49,7 +49,7 @@ while unvisited:
 
 print(f"Re-chained to {len(chain)} ordered points")
 
-# Validate the chain — check for any large jumps
+# Validate the chain  check for any large jumps
 max_gap = 0
 for i in range(1, len(chain)):
     d = haversine_m(chain[i-1][1], chain[i-1][0], chain[i][1], chain[i][0])

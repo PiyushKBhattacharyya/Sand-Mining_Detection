@@ -63,7 +63,7 @@ if not elements:
     with open(existing) as f:
         gj = json.load(f)
     coords = gj["features"][0]["geometry"]["coordinates"]
-    print(f"Existing centerline has {len(coords)} points — already saved, no changes needed.")
+    print(f"Existing centerline has {len(coords)} points  already saved, no changes needed.")
     exit(0)
 
 # Extract points from each way, preserving OSM order

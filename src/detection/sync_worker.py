@@ -1,5 +1,5 @@
 """
-Offline-First Sync Worker — Jetson Nano Edge Component
+Offline-First Sync Worker  Jetson Nano Edge Component
 Runs as a background thread. Detects network availability and syncs all
 unsynced incidents + telemetry to the cloud backend with exponential backoff.
 
@@ -27,8 +27,8 @@ class SyncWorker:
     - Never blocks the edge pipeline (runs in daemon thread)
     """
 
-    def __init__(self, db_manager, cloud_url: str = "http://localhost:8000",
-                 sync_interval_s: float = 5.0):
+    def __init__(self, db_manager, cloud_url = "http://localhost:8000",
+                 sync_interval_s = 5.0):
         self.db_manager     = db_manager
         self.cloud_url      = cloud_url.rstrip("/")
         self.sync_interval  = sync_interval_s
@@ -38,7 +38,7 @@ class SyncWorker:
         self._max_backoff   = 60.0
         self.online         = False
 
-    # ── Public API ────────────────────────────────────────────────────────────
+    #  Public API 
 
     def start(self):
         """Start the sync worker as a daemon background thread."""
@@ -50,9 +50,9 @@ class SyncWorker:
         """Signal the worker to stop gracefully."""
         self._stop_event.set()
 
-    # ── Internal loop ─────────────────────────────────────────────────────────
+    #  Internal loop 
 
-    def _is_cloud_reachable(self) -> bool:
+    def _is_cloud_reachable(self):
         try:
             r = requests.get(f"{self.cloud_url}/api/stats", timeout=2.0)
             return r.status_code == 200
@@ -71,7 +71,7 @@ class SyncWorker:
                     # Reset backoff on success
                     self._backoff = 1.0
                 else:
-                    # Cloud offline — data is already safe on local DB, just wait
+                    # Cloud offline  data is already safe on local DB, just wait
                     logger.debug(f"[SyncWorker] Cloud unreachable. All data stored locally. "
                                  f"Retry in {self._backoff:.0f}s.")
                     self._stop_event.wait(min(self._backoff, self._max_backoff))
@@ -83,7 +83,7 @@ class SyncWorker:
 
             self._stop_event.wait(self.sync_interval)
 
-    def _sync_pending_incidents(self) -> int:
+    def _sync_pending_incidents(self):
         """
         Reads all incidents where synced_to_cloud = 0, uploads them to cloud,
         then marks them synced in the local DB.

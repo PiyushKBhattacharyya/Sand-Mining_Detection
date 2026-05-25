@@ -1,5 +1,5 @@
 """
-Drone Receiver — Jetson Nano Component
+Drone Receiver  Jetson Nano Component
 Receives live telemetry from the Android phone relay app (DJI MSDK v5)
 over UDP, and provides a thread-safe accessor for the edge pipeline.
 
@@ -34,8 +34,8 @@ class TelemetryReceiver:
     Runs in a background daemon thread.
     """
 
-    def __init__(self, host: str = "0.0.0.0", port: int = 9000,
-                 stale_timeout_s: float = 5.0):
+    def __init__(self, host = "0.0.0.0", port = 9000,
+                 stale_timeout_s = 5.0):
         self.host    = host
         self.port    = port
         self.stale_timeout = stale_timeout_s
@@ -57,7 +57,7 @@ class TelemetryReceiver:
     def stop(self):
         self._running = False
 
-    def get_latest(self) -> Optional[Dict[str, Any]]:
+    def get_latest(self):
         """
         Returns the latest telemetry dict, or None if no packet received yet
         or the last packet is older than stale_timeout_s.
@@ -71,7 +71,7 @@ class TelemetryReceiver:
                 return None
             return dict(self._latest)
 
-    def is_online(self) -> bool:
+    def is_online(self):
         return (time.time() - self._last_received) < self.stale_timeout
 
     def _listen(self):
@@ -119,8 +119,8 @@ class DroneVideoCapture:
     (or a USB camera as fallback). Automatically reconnects on stream drop.
     """
 
-    def __init__(self, source: str, frame_w: int = 1920, frame_h: int = 1080,
-                 reconnect_delay_s: float = 3.0):
+    def __init__(self, source, frame_w = 1920, frame_h = 1080,
+                 reconnect_delay_s = 3.0):
         self.source          = source
         self.frame_w         = frame_w
         self.frame_h         = frame_h
@@ -140,7 +140,7 @@ class DroneVideoCapture:
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.frame_h)
             cap.set(cv2.CAP_PROP_FPS, 30)
         else:
-            # RTSP — reduce latency buffer
+            # RTSP  reduce latency buffer
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
         with self._lock:
@@ -151,7 +151,7 @@ class DroneVideoCapture:
         else:
             logger.warning(f"Could not open video source: {src}. Will retry.")
 
-    def read(self) -> np.ndarray:
+    def read(self):
         """
         Read one frame. Returns the frame if successful.
         On failure, returns a dark fallback frame and schedules reconnect.
@@ -164,7 +164,7 @@ class DroneVideoCapture:
             if ret and frame is not None:
                 return frame
             else:
-                logger.warning("Frame read failed — stream dropped. Reconnecting...")
+                logger.warning("Frame read failed  stream dropped. Reconnecting...")
 
         # Fallback frame while reconnecting
         fallback = np.zeros((self.frame_h, self.frame_w, 3), dtype=np.uint8)

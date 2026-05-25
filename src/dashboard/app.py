@@ -1,17 +1,21 @@
+
 import os
 import json
 import base64
 import logging
 import threading
 import time
+import hashlib
+import uuid
 from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, HTTPException, Request
-from fastapi.responses import StreamingResponse, HTMLResponse, Response
+from fastapi.responses import StreamingResponse, HTMLResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 import asyncio
 import sys
 import torch
+import numpy as np
 
 # Monkeypatch torch.load to default weights_only=False for PyTorch 2.6+ compatibility with Ultralytics YOLO
 try:
@@ -35,21 +39,61 @@ from pdf_generator import generate_incident_report
 # pyrefly: ignore [missing-import]
 from zone_builder import build_buffer
 
+# Salting and SHA-256 Hashing helper functions for secure authentication
+def hash_password(password, salt=None):
+    if not salt:
+        salt = uuid.uuid4().hex
+    # Use standard encoding and concatenation to bypass hidden character bugs
+    combined = (str(salt) + str(password)).encode('utf-8')
+    hashed = hashlib.sha256(combined).hexdigest()
+    return str(salt) + ":" + str(hashed)
+
+def verify_password(password, stored_password_hash):
+    try:
+        salt, hashed = stored_password_hash.split(":")
+        check_hash = hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
+        return check_hash == hashed
+    except Exception:
+        return False
+
+# In-memory session store
+ACTIVE_SESSIONS = {}
+
+def get_session_user(request):
+    session_id = request.cookies.get("session_id")
+    if session_id and session_id in ACTIVE_SESSIONS:
+        return ACTIVE_SESSIONS[session_id]
+    return None
+
+# Flight Recording States & Globals
+is_recording = False
+recording_writer = None
+recording_start_time = None
+recording_filepath = None
+recording_filename = None
+recording_lock = threading.Lock()
+global_video_w = 1280
+global_video_h = 720
+local_webcam_mode = False
+last_webcam_frame_time = 0.0
+
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Illegal Sand Mining Drone Surveillance Server",
-    description="Real-time Edge-Cloud Pipeline with Dual Dashboard feeds and spatial queries"
+    description="Real-time Edge-Cloud Pipeline with Dual Dashboard feeds and spatial queries",
+    root_path=os.getenv("ROOT_PATH", "")
 )
 
-# ── Video source config ───────────────────────────────────────────────────────
+#  Video source config 
 # Controls what feeds the two dashboard video windows.
 # cv2.VideoCapture() accepts BOTH an integer (webcam) and a string URL (RTSP),
 # so switching from webcam to drone requires only changing this env var.
 #
-# WEBCAM  (default, testing):   VIDEO_SOURCE=0       ← built-in Mac/Windows webcam
-#                                VIDEO_SOURCE=1       ← second/external webcam
+# WEBCAM  (default, testing):   VIDEO_SOURCE=0        built-in Mac/Windows webcam
+#                                VIDEO_SOURCE=1        second/external webcam
 #
 # DRONE   (when hardware arrives):
 #   DJI via phone relay (DJI MSDK v5 RTSP relay app on Android):
@@ -63,12 +107,12 @@ app = FastAPI(
 #   export VIDEO_SOURCE="rtsp://192.168.1.50:8554/live"
 #   python main.py server
 #
-_raw_source  = os.getenv("VIDEO_SOURCE", "0")
-# Auto-detect: if the value is a plain integer string → webcam index, else RTSP URL
-VIDEO_SOURCE: int | str = int(_raw_source) if _raw_source.lstrip("-").isdigit() else _raw_source
+_raw_source = os.getenv("VIDEO_SOURCE", "0")
+# Auto-detect: if the value is a plain integer string webcam index, else RTSP URL
+VIDEO_SOURCE = int(_raw_source) if _raw_source.lstrip("-").isdigit() else _raw_source
 
-CAMERA_FPS     = float(os.getenv("CAMERA_FPS",     "15.0"))
-CAMERA_QUALITY = int(os.getenv("CAMERA_QUALITY",   "75"))
+CAMERA_FPS = float(os.getenv("CAMERA_FPS", "15.0"))
+CAMERA_QUALITY = int(os.getenv("CAMERA_QUALITY", "75"))
 
 # RTSP-specific tuning (only relevant when VIDEO_SOURCE is a URL)
 # Prefer TCP transport for reliability over Wi-Fi (default is UDP which can drop frames)
@@ -81,55 +125,31 @@ def _video_capture_loop():
     pushes JPEG frames into latest_raw_frame / latest_overlay_frame.
 
     Source is controlled by the VIDEO_SOURCE env var:
-      • Integer  → local webcam (testing mode)
-      • URL str  → RTSP stream from drone or IP camera (field deployment)
+       Integer   local webcam (testing mode)
+       URL str   RTSP stream from drone or IP camera (field deployment)
 
-    No restart needed — just change VIDEO_SOURCE and reboot the server.
+    No restart needed just change VIDEO_SOURCE and reboot the server.
     """
-    global latest_raw_frame, latest_overlay_frame, latest_webcam_detections
+    global latest_raw_frame, latest_overlay_frame, latest_webcam_detections, _yolo_model, local_webcam_mode, last_webcam_frame_time
 
     try:
         import cv2
     except ImportError:
-        logger.warning("opencv-python not installed — video feed disabled.")
+        logger.warning("opencv-python not installed video feed disabled.")
         return
 
-    is_rtsp = isinstance(VIDEO_SOURCE, str)
+    # We start with synthetic video fallback. The dynamic hot-swapping block
+    # inside the main loop will automatically trigger on the very first step
+    # to open the user's configured live RTMP/RTSP stream or webcam index dynamically!
+    cap = None
+    use_synthetic_video = True
+    current_source = None
+    is_rtsp = False
+    is_file = False
 
-    if is_rtsp:
-        # ── DRONE / RTSP MODE ──────────────────────────────────────────────
-        # Force TCP transport for stable Wi-Fi streaming (avoids UDP packet loss).
-        # GStreamer pipeline string can be swapped here for Jetson hardware decode.
-        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = f"rtsp_transport;{RTSP_TRANSPORT}"
-        logger.info(f"🛸  Drone RTSP stream opening: {VIDEO_SOURCE}  (transport={RTSP_TRANSPORT})")
-        logger.info("    Waiting for drone to broadcast... (this may take a few seconds)")
-        cap = cv2.VideoCapture(VIDEO_SOURCE, cv2.CAP_FFMPEG)
-    else:
-        # ── WEBCAM MODE (default, no drone yet) ───────────────────────────
-        logger.info(f"📷  Webcam capture starting on camera index {VIDEO_SOURCE}...")
-        cap = cv2.VideoCapture(VIDEO_SOURCE)
-        # Request a reasonable resolution — driver will use nearest supported
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  1280)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-
-    if not cap.isOpened():
-        if is_rtsp:
-            logger.warning(
-                f"⚠️  Could not connect to RTSP stream: {VIDEO_SOURCE}\n"
-                "    Check that the drone is powered on, broadcasting, and on the same network.\n"
-                "    Falling back to no feed — dashboard will show placeholder."
-            )
-        else:
-            logger.warning(
-                f"⚠️  Could not open camera {VIDEO_SOURCE}. "
-                "Try a different index via VIDEO_SOURCE env var."
-            )
-        return
-
-    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    source_label = f"RTSP drone stream" if is_rtsp else f"webcam {VIDEO_SOURCE}"
-    logger.info(f"✅  {source_label} opened at {w}x{h} — feeding both dashboard streams.")
+    global global_video_w, global_video_h
+    global_video_w = 1280
+    global_video_h = 720
 
     encode_params = [cv2.IMWRITE_JPEG_QUALITY, CAMERA_QUALITY]
     interval = 1.0 / CAMERA_FPS
@@ -141,38 +161,150 @@ def _video_capture_loop():
     while True:
         t0 = time.time()
 
+        # Dynamically hot-swap video source if the operator changed it on the dashboard HUD!
+        target_source = flight_config.get("video_source", "0")
+        
+        # Normalize target source type (integers for cameras, strings for RTMP/RTSP/files)
+        if isinstance(target_source, str) and target_source.lstrip("-").isdigit():
+            target_source = int(target_source)
+
+        if current_source != target_source:
+            logger.info(" Swapping live video capture source: {} -> {}".format(current_source, target_source))
+            if cap is not None:
+                try:
+                    cap.release()
+                except Exception as ex_rel:
+                    logger.debug("Error releasing previous VideoCapture: {}".format(ex_rel))
+                cap = None
+
+            current_source = target_source
+            use_synthetic_video = False
+
+            if target_source == "dummy":
+                logger.info("  New source is dummy. Falling back to synthetic simulation mode.")
+                use_synthetic_video = True
+            else:
+                try:
+                    is_rtsp = isinstance(target_source, str) and (
+                        target_source.startswith("rtsp://") or 
+                        target_source.startswith("rtmp://") or 
+                        target_source.startswith("http://") or 
+                        target_source.startswith("https://")
+                    )
+                    is_file = isinstance(target_source, str) and not is_rtsp
+
+                    if is_rtsp:
+                        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;" + str(RTSP_TRANSPORT)
+                        logger.info("  Connecting to dynamic drone stream: {} (transport={})".format(target_source, RTSP_TRANSPORT))
+                        cap = cv2.VideoCapture(target_source, cv2.CAP_FFMPEG)
+                    elif is_file:
+                        logger.info("  Opening dynamic video file: {}...".format(target_source))
+                        cap = cv2.VideoCapture(target_source)
+                    else:
+                        logger.info("  Starting dynamic webcam camera index {}...".format(target_source))
+                        cap = cv2.VideoCapture(target_source)
+                        if cap is not None and cap.isOpened():
+                            cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+                            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+
+                    if cap is None or not cap.isOpened():
+                        raise Exception("VideoCapture returned an error or is closed")
+
+                    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    global_video_w = w if w > 0 else 1280
+                    global_video_h = h if h > 0 else 720
+                    source_label = "RTSP dynamic stream" if is_rtsp else f"Camera index {target_source}"
+                    logger.info("  [SUCCESS] {} dynamic swapped successfully at {}x{}".format(source_label, global_video_w, global_video_h))
+
+                except Exception as e:
+                    logger.warning("  Could not open dynamic source ({})  falling back to synthetic simulation.".format(e))
+                    use_synthetic_video = True
+                    global_video_w = 1280
+                    global_video_h = 720
+
+        if local_webcam_mode:
+            # If the user is actively streaming their browser webcam, pause drone file playback!
+            # If no frame has been uploaded for more than 3 seconds, reset mode back to false!
+            if time.time() - last_webcam_frame_time > 3.0:
+                local_webcam_mode = False
+                logger.info(" Browser webcam stream timed out. Restoring default drone video playback.")
+            else:
+                time.sleep(0.06)
+                continue
+
         # Dynamically hot-swap local YOLO model if operator changed it in the dropdown!
         target_model_name = flight_config.get("active_model", "yolov8n.pt")
+        weights_dir = Path(__file__).resolve().parent.parent.parent / "models" / "weights"
+        weights_dir.mkdir(parents=True, exist_ok=True)
+        
         if target_model_name == "best.pt":
-            target_path = str(Path(__file__).resolve().parent.parent.parent / "models" / "weights" / "best.pt")
+            target_path = str(weights_dir / "best.pt")
             if not Path(target_path).exists():
-                target_path = "yolov8n.pt"
+                target_path = str(weights_dir / "yolov8n.pt")
         else:
-            target_path = target_model_name
+            target_path = str(weights_dir / target_model_name)
 
         if current_loaded_model_path != target_path:
-            logger.info(f"🔄 Swapping local server YOLO model: {current_loaded_model_path} -> {target_path}")
+            logger.info(" Swapping local server YOLO model: {} -> {}".format(current_loaded_model_path, target_path))
             try:
                 from ultralytics import YOLO
-                global _yolo_model
                 _yolo_model = YOLO(target_path)
                 current_loaded_model_path = target_path
-                logger.info(f"✅ Local server YOLO model successfully swapped to: {target_model_name}")
+                logger.info(" Local server YOLO model successfully swapped to: {}".format(target_model_name))
             except Exception as e:
-                logger.error(f"❌ Failed to dynamic swap local YOLO model: {e}")
-        ret, frame = cap.read()
+                logger.error(" Failed to dynamic swap local YOLO model: {}".format(e))
+                # Prevent CPU-burning infinite retry loops on model loading failures:
+                current_loaded_model_path = target_path
+
+        if use_synthetic_video:
+            # Create a nice dark-blue grid background (simulating a tactical drone camera screen)
+            frame = np.zeros((720, 1280, 3), dtype=np.uint8)
+            # Make it a sleek dark-blue grid background
+            frame[:, :] = [18, 12, 8] # Very dark navy blue
+            
+            # Draw standard 80px gridlines
+            for x in range(0, 1280, 80):
+                cv2.line(frame, (x, 0), (x, 720), (32, 24, 18), 1)
+            for y in range(0, 720, 80):
+                cv2.line(frame, (0, y), (1280, y), (32, 24, 18), 1)
+                
+            # Draw central tactical HUD green crosshair
+            cv2.line(frame, (640 - 20, 360), (640 + 20, 360), (0, 255, 0), 1)
+            cv2.line(frame, (640, 360 - 20), (640, 360 + 20), (0, 255, 0), 1)
+            
+            # Print status message
+            drone_lat = latest_drone_coords.get("lat", 0.0)
+            drone_lon = latest_drone_coords.get("lon", 0.0)
+            cv2.putText(frame, "TACTICAL RAW STREAM (SIMULATED)", (40, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+            cv2.putText(frame, "LAT: {:.6f}".format(drone_lat), (40, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+            cv2.putText(frame, "LON: {:.6f}".format(drone_lon), (40, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+            
+            # Add dynamic scan line sweep animation
+            scan_y = int((time.time() * 200) % 720)
+            cv2.line(frame, (0, scan_y), (1280, scan_y), (0, 80, 0), 1)
+
+            ret = True
+        else:
+            ret, frame = cap.read()
+            if not ret and is_file:
+                # Rewind local video file to loop infinitely!
+                logger.info("Video file ended. Rewinding back to start...")
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                ret, frame = cap.read()
 
         if not ret:
             if is_rtsp:
-                # RTSP can drop temporarily (drone banking, interference) — keep retrying
-                logger.warning("⚠️  RTSP frame drop — retrying...")
+                # RTSP can drop temporarily (drone banking, interference)  keep retrying
+                logger.warning("  RTSP frame drop  retrying...")
                 time.sleep(0.1)
             else:
                 time.sleep(0.05)
             continue
 
-        # Flip the frame horizontally to correct webcam mirroring
-        frame = cv2.flip(frame, 1)
+        if not use_synthetic_video:
+            # Flip the frame horizontally to correct webcam mirroring
+            frame = cv2.flip(frame, 1)
 
         _, buf = cv2.imencode(".jpg", frame, encode_params)
         jpeg = buf.tobytes()
@@ -180,62 +312,17 @@ def _video_capture_loop():
         # Raw feed: clean, unprocessed frame from the camera
         latest_raw_frame = jpeg
 
-        # Calculate distance to see if drone has reached the Detection Starting Spot
-        def is_at_starting_spot() -> bool:
-            global has_reached_starting_spot
-
-            target_lat = flight_config.get("start_lat", 0.0)
-            target_lng = flight_config.get("start_lng", 0.0)
-            radius = flight_config.get("start_radius_meters", 500.0)
-            enabled = flight_config.get("detection_enabled", False)
-
-            if not enabled or target_lat == 0.0 or target_lng == 0.0:
-                return False
-
-            drone_lat = latest_drone_coords.get("lat", 0.0)
-            drone_lon = latest_drone_coords.get("lon", 0.0)
-            if drone_lat == 0.0 or drone_lon == 0.0:
-                return False
-
-            import math
-            lat1, lon1 = math.radians(drone_lat), math.radians(drone_lon)
-            lat2, lon2 = math.radians(target_lat), math.radians(target_lng)
-            
-            dlat = lat2 - lat1
-            dlon = lon2 - lon1
-            
-            a = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2)**2
-            c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-            
-            distance_meters = 6371000.0 * c
-            if distance_meters <= radius:
-                if not has_reached_starting_spot:
-                    logger.info("🎯 Drone has entered the Detection Starting Spot! AI Detection System is now ACTIVE.")
-                    has_reached_starting_spot = True
-
-            return has_reached_starting_spot
-
-        def is_inside_fence() -> bool:
-            global global_cluster_engine
-            if global_cluster_engine is None:
-                return True  # Fallback if engine is initializing
-            drone_lat = latest_drone_coords.get("lat", 0.0)
-            drone_lon = latest_drone_coords.get("lon", 0.0)
-            if drone_lat == 0.0 or drone_lon == 0.0:
-                return False
-            return global_cluster_engine.is_in_illegal_zone(drone_lat, drone_lon)
-
-        # ── DETECTION HOOK ────────────────────────────────────────────────
-        # Person-only detection (COCO class 0).
-        # Replace _yolo_model with your custom model by dropping best.pt
-        # into models/weights/ — it auto-loads at startup.
-        if _yolo_model is not None and is_at_starting_spot() and is_inside_fence():
+        if use_synthetic_video:
+            latest_overlay_frame = jpeg
+            latest_webcam_detections = []
+        elif _yolo_model is not None:
             try:
+                # Detect person (0), car (2), motorcycle (3), bus (5), truck (7)
                 results = _yolo_model(
                     frame,
                     verbose=False,
-                    classes=[0],    # 0 = person in COCO; swap for your custom class IDs later
-                    conf=0.30,      # confidence threshold — lower = catches more detections
+                    classes=[0, 2, 3, 5, 7],
+                    conf=0.30,
                     iou=0.45,
                 )
                 overlay = results[0].plot()   # annotated BGR numpy array
@@ -243,27 +330,58 @@ def _video_capture_loop():
                 latest_overlay_frame = obuf.tobytes()
 
                 # Extract and store bounding box details globally for hybrid telemetry mapping
+                # But ONLY trigger incidents when inside geofence start area!
                 active_dets = []
-                if len(results[0].boxes) > 0:
-                    for box in results[0].boxes:
-                        coords = box.xyxy[0].tolist()
-                        conf = float(box.conf[0].item())
-                        active_dets.append({
-                            'class_name': 'person',
-                            'confidence': conf,
-                            'bbox_x_min': int(coords[0]),
-                            'bbox_y_min': int(coords[1]),
-                            'bbox_x_max': int(coords[2]),
-                            'bbox_y_max': int(coords[3])
-                        })
+                if is_at_starting_spot():
+                    if len(results[0].boxes) > 0:
+                        for box in results[0].boxes:
+                            coords = box.xyxy[0].tolist()
+                            conf = float(box.conf[0].item())
+                            cls_id = int(box.cls[0].item())
+                            
+                            # Map YOLO class IDs to standard names
+                            cls_map = {0: 'person', 2: 'car', 3: 'motorcycle', 5: 'bus', 7: 'truck'}
+                            class_name = cls_map.get(cls_id, 'jcb')
+                            
+                            active_dets.append({
+                                'class_name': class_name,
+                                'confidence': conf,
+                                'bbox_x_min': int(coords[0]),
+                                'bbox_y_min': int(coords[1]),
+                                'bbox_x_max': int(coords[2]),
+                                'bbox_y_max': int(coords[3])
+                            })
                 latest_webcam_detections = active_dets
             except Exception as exc:
-                logger.debug(f"YOLO inference error: {exc}")
+                logger.debug("YOLO inference error: {}".format(exc))
                 latest_overlay_frame = jpeg   # fallback: show raw if inference crashes
                 latest_webcam_detections = []
         else:
-            latest_overlay_frame = jpeg   # no model loaded — mirror raw feed
+            latest_overlay_frame = jpeg   # no model loaded  mirror raw feed
             latest_webcam_detections = []
+
+        # Determine the final frame to write to the recording
+        recording_frame = frame
+        if use_synthetic_video and is_at_starting_spot() and is_inside_fence():
+            try:
+                recording_frame = overlay
+            except NameError:
+                pass
+        elif _yolo_model is not None and is_at_starting_spot() and is_inside_fence():
+            try:
+                recording_frame = overlay
+            except NameError:
+                pass
+
+        # Write to video recorder if active
+        global is_recording, recording_writer, recording_lock
+        if is_recording and not local_webcam_mode:
+            with recording_lock:
+                if recording_writer is not None:
+                    try:
+                        recording_writer.write(recording_frame)
+                    except Exception as e:
+                        logger.error("Error writing frame to recording: {}".format(e))
 
         elapsed = time.time() - t0
         sleep_for = interval - elapsed
@@ -273,7 +391,7 @@ def _video_capture_loop():
 # Mount the project's data directory so the frontend can directly load spatial GeoJSON files
 app.mount("/data", StaticFiles(directory=str(Path(__file__).resolve().parent.parent.parent / "data")), name="data")
 
-# Evidence directory — also served as static for UI image display
+# Evidence directory  also served as static for UI image display
 EVIDENCE_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "detections"
 EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -282,8 +400,8 @@ db_manager = DatabaseManager(db_type="sqlite")
 # Ensure DB is initialized
 db_manager.initialize_database()
 
-# Active buffer radius — starts at 1km, updated via /api/zone/radius
-active_buffer_radius_m: float = 1000.0
+# Active buffer radius  starts at 1km, updated via /api/zone/radius
+active_buffer_radius_m = 1000.0
 
 #  Global dictionary holding the active flight mission control configuration.
 #  Allows the operator dashboard to set parameters that are fetched by the drone
@@ -294,28 +412,75 @@ flight_config = {
     "start_lat": 0.0,              # Dynamic start coordinate latitude
     "start_lng": 0.0,              # Dynamic start coordinate longitude
     "start_radius_meters": 500.0,  # Dynamic start radius in meters
+    "video_source": os.getenv("VIDEO_SOURCE", "0"), # Dynamic RTMP/RTSP stream source or camera index
     "detection_enabled": False,
 }
 
 latest_drone_coords = {"lat": 0.0, "lon": 0.0}
 has_reached_starting_spot = False
 
+# Calculate distance to see if drone has reached the Detection Starting Spot
+def is_at_starting_spot():
+    global has_reached_starting_spot
+
+    target_lat = flight_config.get("start_lat", 0.0)
+    target_lng = flight_config.get("start_lng", 0.0)
+    radius = flight_config.get("start_radius_meters", 500.0)
+    enabled = flight_config.get("detection_enabled", False)
+
+    if not enabled or target_lat == 0.0 or target_lng == 0.0:
+        return False
+
+    drone_lat = latest_drone_coords.get("lat", 0.0)
+    drone_lon = latest_drone_coords.get("lon", 0.0)
+    if drone_lat == 0.0 or drone_lon == 0.0:
+        return False
+
+    import math
+    lat1, lon1 = math.radians(drone_lat), math.radians(drone_lon)
+    lat2, lon2 = math.radians(target_lat), math.radians(target_lng)
+    
+    dlat = lat2 - lat1
+    dlon = lon2 - lon1
+    
+    a = math.sin(dlat / 2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    
+    distance_meters = 6371000.0 * c
+    if distance_meters <= radius:
+        if not has_reached_starting_spot:
+            logger.info(" Drone has entered the Detection Starting Spot! AI Detection System is now ACTIVE.")
+            has_reached_starting_spot = True
+
+    return has_reached_starting_spot
+
+def is_inside_fence():
+    global global_cluster_engine
+    if global_cluster_engine is None:
+        return True  # Fallback if engine is initializing
+    drone_lat = latest_drone_coords.get("lat", 0.0)
+    drone_lon = latest_drone_coords.get("lon", 0.0)
+    if drone_lat == 0.0 or drone_lon == 0.0:
+        return False
+    return global_cluster_engine.is_in_illegal_zone(drone_lat, drone_lon)
+
+
 # Store active websocket connections
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: List[WebSocket] = []
+        self.active_connections = []
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket):
         await websocket.accept()
         self.active_connections.append(websocket)
-        logger.info(f"New client connected. Total clients: {len(self.active_connections)}")
+        logger.info("New client connected. Total clients: {}".format(len(self.active_connections)))
 
-    def disconnect(self, websocket: WebSocket):
+    def disconnect(self, websocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
-            logger.info(f"Client disconnected. Total clients: {len(self.active_connections)}")
+            logger.info("Client disconnected. Total clients: {}".format(len(self.active_connections)))
 
-    async def broadcast(self, message: Dict[str, Any]):
+    async def broadcast(self, message):
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
@@ -328,12 +493,13 @@ manager = ConnectionManager()
 # Global frames storage for live multipart streaming
 # In a physical deployment, the Jetson Nano continuously POSTs frames here,
 # which are then distributed to the dashboard HTML IMG tags.
-latest_raw_frame: bytes = b""
-latest_overlay_frame: bytes = b""
-latest_webcam_detections: List[Dict[str, Any]] = []
+latest_raw_frame = b""
+latest_overlay_frame = b""
+latest_webcam_detections = []
 
-# Holds the loaded YOLO model — set once at startup, used in _video_capture_loop
+# Holds the loaded YOLO model  set once at startup, used in _video_capture_loop
 _yolo_model = None
+yolo_lock = None
 
 # Global ClusterEngine for runtime buffer size synchronization
 global_cluster_engine = None
@@ -358,14 +524,14 @@ async def _webcam_telemetry_simulation_loop():
     # Load and interpolate centerline
     centerline_path = Path(__file__).resolve().parent.parent.parent / "data" / "legal_zones" / "river_centerline.geojson"
     if not centerline_path.exists():
-        logger.error(f"Centerline not found for hybrid simulation: {centerline_path}")
+        logger.error("Centerline not found for hybrid simulation: {}".format(centerline_path))
         return
         
     try:
         with open(centerline_path, 'r') as f:
             cl_data = json.load(f)
     except Exception as e:
-        logger.error(f"Error loading centerline for hybrid simulation: {e}")
+        logger.error("Error loading centerline for hybrid simulation: {}".format(e))
         return
         
     raw_coords = cl_data['features'][0]['geometry']['coordinates']
@@ -376,7 +542,7 @@ async def _webcam_telemetry_simulation_loop():
     if len(raw_coords) < 10:
         logger.error("Not enough centerline points in India after filtering.")
         return
-    logger.info(f"Centerline filtered to {len(raw_coords)} points in Assam, India.")
+    logger.info("Centerline filtered to {} points in Assam, India.".format(len(raw_coords)))
     # Store raw centerline waypoint data WITHOUT baking in the lateral offset.
     # The actual lat/lon is computed dynamically each step so the weave amplitude
     # instantly reflects the live active_buffer_radius_m when the slider moves.
@@ -415,7 +581,7 @@ async def _webcam_telemetry_simulation_loop():
                 'heading':    heading_deg,
             })
 
-    logger.info(f"🚀 Hybrid simulation generated {len(flight_points)} waypoints (dynamic-radius weave).")
+    logger.info(" Hybrid simulation generated {} waypoints (dynamic-radius weave).".format(len(flight_points)))
     
     step = 0
     battery = 100.0
@@ -439,7 +605,7 @@ async def _webcam_telemetry_simulation_loop():
 
             # Dynamically compute lat/lon using the LIVE buffer radius so the
             # drone's weave amplitude instantly matches the slider value.
-            # Weave amplitude = 1.8 × buffer radius (flies well inside AND outside)
+            # Weave amplitude = 1.8 * buffer radius (flies well inside AND outside)
             lateral_offset_meters = math.sin(point['weave_phase']) * (active_buffer_radius_m * 1.8)
             base_lat = point['base_lat']
             base_lon = point['base_lon']
@@ -493,7 +659,7 @@ async def _webcam_telemetry_simulation_loop():
             }
             await manager.broadcast(telemetry_payload)
             
-            # ── Process active webcam detections mapped to this GPS location! ──
+            #  Process active webcam detections mapped to this GPS location! 
             active_dets = list(latest_webcam_detections)
 
             if active_dets:
@@ -546,7 +712,7 @@ async def _webcam_telemetry_simulation_loop():
                                     if evidence_paths:
                                         inc['evidence_image_path'] = evidence_paths[0]
                     except Exception as e:
-                        logger.error(f"Error generating hybrid evidence snapshot: {e}")
+                        logger.error("Error generating hybrid evidence snapshot: {}".format(e))
 
                     # Save incidents to DB
                     def save_incidents_db():
@@ -571,7 +737,7 @@ async def _webcam_telemetry_simulation_loop():
             await asyncio.sleep(0.33)
             
         except Exception as e:
-            logger.error(f"Error in hybrid telemetry loop: {e}")
+            logger.error("Error in hybrid telemetry loop: {}".format(e))
             await asyncio.sleep(1.0)
 
 
@@ -584,37 +750,39 @@ async def startup_event():
     """
     global _yolo_model
 
-    # ── Load YOLO model ───────────────────────────────────────────────────────
-    # Priority: custom trained weights → generic YOLOv8n placeholder
+    #  Load YOLO model 
+    # Priority: custom trained weights  generic YOLOv8n placeholder
     custom_weights = Path(__file__).resolve().parent.parent.parent / "models" / "weights" / "best.pt"
     try:
         from ultralytics import YOLO
 
         if custom_weights.exists():
             _yolo_model = YOLO(str(custom_weights))
-            logger.info(f"✅  Loaded CUSTOM YOLO model: {custom_weights.name}")
+            logger.info("  Loaded CUSTOM YOLO model: {}".format(custom_weights.name))
         else:
-            # Auto-downloads yolov8n.pt on first run (~6 MB) — already cached
-            _yolo_model = YOLO("yolov8n.pt")
-            logger.info("🤖  YOLOv8n placeholder loaded — detecting PERSON ONLY (conf≥0.30). Swap best.pt when ready.")
+            # Auto-downloads yolov8n.pt on first run (~6 MB) directly to models/weights/
+            placeholder_path = custom_weights.parent / "yolov8n.pt"
+            custom_weights.parent.mkdir(parents=True, exist_ok=True)
+            _yolo_model = YOLO(str(placeholder_path))
+            logger.info("  YOLOv8n placeholder loaded at {}  detecting PERSON ONLY (conf0.30). Swap best.pt when ready.".format(placeholder_path.name))
     except Exception as e:
-        logger.warning(f"⚠️  YOLO failed to load — overlay will mirror raw feed. Error: {e}")
+        logger.warning("  YOLO failed to load  overlay will mirror raw feed. Error: {}".format(e))
         _yolo_model = None
 
-    # ── Start video capture thread AFTER model is ready ────────────────
+    #  Start video capture thread AFTER model is ready 
     # Ensures first frames already have a model to run against.
     t = threading.Thread(target=_video_capture_loop, daemon=True, name="video-capture")
     t.start()
-    source_desc = f"RTSP: {VIDEO_SOURCE}" if isinstance(VIDEO_SOURCE, str) else f"webcam {VIDEO_SOURCE}"
-    logger.info(f"🎥  Video capture thread launched ({source_desc}) — dashboard feeds will populate shortly.")
+    source_desc = "RTSP: {}".format(VIDEO_SOURCE) if isinstance(VIDEO_SOURCE, str) else f"webcam {VIDEO_SOURCE}"
+    logger.info("  Video capture thread launched ({})  dashboard feeds will populate shortly.".format(source_desc))
 
-    # Start the hybrid telemetry simulation loop if we are using the webcam (testing mode)
-    if isinstance(VIDEO_SOURCE, int):
-        asyncio.create_task(_webcam_telemetry_simulation_loop())
-        logger.info("🛰️ Launched dynamic hybrid flight telemetry simulator background task.")
+    # Start the hybrid telemetry simulation loop if we are using the webcam or dummy (testing/emulation mode)
+    if isinstance(VIDEO_SOURCE, int) or VIDEO_SOURCE == "dummy":
+        asyncio.ensure_future(_webcam_telemetry_simulation_loop())
+        logger.info(" Launched dynamic hybrid flight telemetry simulator background task.")
 
 # Frame generator for multipart MJPEG streaming
-async def frame_generator(stream_type: str):
+async def frame_generator(stream_type     ):
     global latest_raw_frame, latest_overlay_frame
     
     # 1. Fallback dummy frame if no feed is active
@@ -634,16 +802,22 @@ async def frame_generator(stream_type: str):
 
 # Live Video Endpoints (multipart MJPEG)
 @app.get("/stream/raw")
-async def stream_raw():
+async def stream_raw(request: Request):
     """Serves the raw video feed from the DJI drone camera."""
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     return StreamingResponse(
         frame_generator("raw"),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
 
 @app.get("/stream/overlay")
-async def stream_overlay():
+async def stream_overlay(request: Request):
     """Serves the real-time AI bounding box overlay video feed."""
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     return StreamingResponse(
         frame_generator("overlay"),
         media_type="multipart/x-mixed-replace; boundary=frame"
@@ -652,24 +826,139 @@ async def stream_overlay():
 # Edge Frame Receiver Endpoint
 @app.post("/api/edge/frame")
 async def receive_edge_frame(stream_type: str, request: Request):
-    """Receives compressed JPEG frames uploaded by the Edge Jetson Nano."""
-    global latest_raw_frame, latest_overlay_frame
+    """Receives compressed JPEG frames uploaded by the Edge Jetson Nano or local Webcam pipeline."""
+    global latest_raw_frame, latest_overlay_frame, latest_webcam_detections, is_recording, recording_writer, recording_lock, local_webcam_mode, last_webcam_frame_time
     frame_data = await request.body()
+    if not frame_data:
+        return {"status": "ok"}
+
+    # Browser is streaming frames to us! Activate local webcam mode so recording / detection pipelines fall back to this stream
+    local_webcam_mode = True
+    last_webcam_frame_time = time.time()
+
     if stream_type == "raw":
-        latest_raw_frame = frame_data
+        # Decode and process browser webcam frame
+        try:
+            import cv2
+            import numpy as np
+            nparr = np.frombuffer(frame_data, np.uint8)
+            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if frame is not None:
+                # Flip the frame horizontally to correct webcam mirroring
+                frame = cv2.flip(frame, 1)
+                
+                # Re-encode flipped frame to update the raw stream
+                _, raw_buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                latest_raw_frame = raw_buf.tobytes()
+                
+                # Determine overlays and run YOLO on VPS
+                active_dets = []
+                overlay = frame.copy()
+                
+                global yolo_lock
+                if yolo_lock is None:
+                    yolo_lock = asyncio.Lock()
+
+                if _yolo_model is not None:
+                    # If YOLO is not currently busy, run inference on the frame!
+                    if not yolo_lock.locked():
+                        async with yolo_lock:
+                            loop = asyncio.get_event_loop()
+                            results = await loop.run_in_executor(
+                                None,
+                                lambda: _yolo_model(
+                                    frame,
+                                    verbose=False,
+                                    classes=[0, 2, 3, 5, 7],
+                                    conf=0.30,
+                                    iou=0.45,
+                                )
+                            )
+                            overlay = results[0].plot()
+                            
+                            # Extract detections
+                            if len(results[0].boxes) > 0:
+                                for box in results[0].boxes:
+                                    coords = box.xyxy[0].tolist()
+                                    conf = float(box.conf[0].item())
+                                    cls_id = int(box.cls[0].item())
+                                    
+                                    cls_map = {0: 'person', 2: 'car', 3: 'motorcycle', 5: 'bus', 7: 'truck'}
+                                    class_name = cls_map.get(cls_id, 'jcb')
+                                    
+                                    active_dets.append({
+                                        'class_name': class_name,
+                                        'confidence': conf,
+                                        'bbox_x_min': int(coords[0]),
+                                        'bbox_y_min': int(coords[1]),
+                                        'bbox_x_max': int(coords[2]),
+                                        'bbox_y_max': int(coords[3])
+                                    })
+                            
+                            if is_at_starting_spot():
+                                latest_webcam_detections = active_dets
+                            else:
+                                latest_webcam_detections = []
+                    else:
+                        # YOLO is busy processing the previous frame!
+                        # Copy the last known detections and manually draw them on the raw frame
+                        # to keep the video stream perfectly fluid (30 FPS) with absolutely zero lag!
+                        overlay = frame.copy()
+                        if is_at_starting_spot():
+                            for det in latest_webcam_detections:
+                                x1 = det.get('bbox_x_min', 0)
+                                y1 = det.get('bbox_y_min', 0)
+                                x2 = det.get('bbox_x_max', 0)
+                                y2 = det.get('bbox_y_max', 0)
+                                name = det.get('class_name', 'target')
+                                conf = det.get('confidence', 0.0)
+                                
+                                # Draw bounding box and label
+                                cv2.rectangle(overlay, (x1, y1), (x2, y2), (225, 105, 65), 2) # Premium orange-red tactical box
+                                label = f"{name} {conf:.2f}"
+                                cv2.putText(overlay, label, (x1, y1 - 7), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (225, 105, 65), 2)
+                
+                _, obuf = cv2.imencode(".jpg", overlay, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                latest_overlay_frame = obuf.tobytes()
+ 
+                # If recording is active, write browser frames to output file directly on the VPS!
+                if is_recording:
+                    with recording_lock:
+                        if recording_writer is not None:
+                            try:
+                                # Pick annotated overlay if inside geofence, else raw frame
+                                if is_at_starting_spot():
+                                    recording_frame = overlay
+                                else:
+                                    recording_frame = frame
+                                # ALWAYS resize to match the VideoWriter's initialized dimensions
+                                rw, rh = global_video_w, global_video_h
+                                fh, fw = recording_frame.shape[:2]
+                                if fw != rw or fh != rh:
+                                    recording_frame = cv2.resize(recording_frame, (rw, rh))
+                                recording_writer.write(recording_frame)
+                            except Exception as e:
+                                logger.error("Error writing frame to recording: {}".format(e))
+        except Exception as exc:
+            logger.debug("VPS received-frame YOLO error: {}".format(exc))
+            
     elif stream_type == "overlay":
-        latest_overlay_frame = frame_data
+        # Only overwrite overlay if we aren't generating it ourselves from the raw stream
+        # This keeps compatibility with the Edge pipeline which uploads its own overlay
+        if latest_overlay_frame is None or len(latest_webcam_detections) == 0:
+            latest_overlay_frame = frame_data
+            
     return {"status": "ok"}
 
 # Edge Telemetry & Event Sync Endpoint
 @app.post("/api/edge/sync")
-async def receive_edge_sync(data: Dict[str, Any]):
+async def receive_edge_sync(data: dict):
     """
     Receives real-time telemetry logs, detections, and alerts from the Jetson Nano
     and broadcasts them immediately to the operator dashboard via WebSockets.
     Also handles base64-encoded evidence images from the offline sync worker.
     """
-    logger.info(f"Sync event received. Type: {data.get('type')}")
+    logger.info("Sync event received. Type: {}".format(data.get('type')))
 
     # If payload contains a base64 evidence image, decode and save it cloud-side
     payload = data.get("payload", {})
@@ -684,7 +973,7 @@ async def receive_edge_sync(data: Dict[str, Any]):
             # 1. Decode the base64 string sent by the Jetson Sync Worker
             img_data = base64.b64decode(img_b64)
             # 2. Save the image in the cloud evidence directory
-            img_path = EVIDENCE_DIR / f"cloud_evidence_{inc_id}.jpg"
+            img_path = EVIDENCE_DIR / "cloud_evidence_{}.jpg".format(inc_id)
             with open(img_path, "wb") as f:
                 f.write(img_data)
             payload["evidence_image_path"] = str(img_path.relative_to(
@@ -699,17 +988,17 @@ async def receive_edge_sync(data: Dict[str, Any]):
             ph = "%s" if db_manager.db_type == "postgresql" else "?"
 
             cursor.execute(
-                f"UPDATE incidents SET evidence_image_blob = {ph} WHERE id = {ph}",
+                "UPDATE incidents SET evidence_image_blob = {} WHERE id = {}".format(ph, ph),
                 (img_data, inc_id)
             )
 
             conn.commit()
             cursor.close()
             conn.close()
-            logger.info(f"Saved binary evidence blob to DB for incident #{inc_id}")
+            logger.info("Saved binary evidence blob to DB for incident #{}".format(inc_id))
 
         except Exception as e:
-            logger.error(f"Could not save evidence image: {e}")
+            logger.error("Could not save evidence image: {}".format(e))
 
     # Broadcast to all open dashboards
     await manager.broadcast(data)
@@ -717,7 +1006,7 @@ async def receive_edge_sync(data: Dict[str, Any]):
 
 # REST APIs for historical query & filtering
 
-def parse_date_to_utc(dt_str: str, is_end: bool = False) -> str:
+def parse_date_to_utc(dt_str, is_end = False):
     """
     Converts a local browser datetime string to UTC in YYYY-MM-DD HH:MM:SS format.
     If date-only (10 chars), appends start-of-day or end-of-day time.
@@ -736,16 +1025,20 @@ def parse_date_to_utc(dt_str: str, is_end: bool = False) -> str:
         dt_utc = dt.astimezone(timezone.utc)
         return dt_utc.strftime("%Y-%m-%d %H:%M:%S")
     except Exception as e:
-        logger.warning(f"Error parsing date {dt_str}: {e}")
+        logger.warning("Error parsing date {}: {}".format(dt_str, e))
         return dt_str.replace('T', ' ')
 
 @app.get("/api/incidents")
 def get_incidents(
-    severity: Optional[str] = Query(None, description="Filter by severity: EXTREME, SEVERE, MEDIUM, LOW"),
-    start_date: Optional[str] = Query(None, description="Filter by start date/time (local timezone)"),
-    end_date: Optional[str] = Query(None, description="Filter by end date/time (local timezone)")
+    request: Request,
+    severity                = Query(None, description="Filter by severity: EXTREME, SEVERE, MEDIUM, LOW"),
+    start_date                = Query(None, description="Filter by start date/time (local timezone)"),
+    end_date                = Query(None, description="Filter by end date/time (local timezone)")
 ):
     """Retrieves list of all historic clusters/incidents with optional filtering."""
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     conn = db_manager.get_connection()
     cursor = conn.cursor()
     
@@ -757,17 +1050,17 @@ def get_incidents(
     ph = "?" if is_sqlite else "%s"
     
     if severity:
-        clauses.append(f"severity = {ph}")
+        clauses.append("severity = {}".format(ph))
         params.append(severity.upper())
         
     if start_date:
         start_utc = parse_date_to_utc(start_date, is_end=False)
-        clauses.append(f"timestamp >= {ph}")
+        clauses.append("timestamp >= {}".format(ph))
         params.append(start_utc)
         
     if end_date:
         end_utc = parse_date_to_utc(end_date, is_end=True)
-        clauses.append(f"timestamp <= {ph}")
+        clauses.append("timestamp <= {}".format(ph))
         params.append(end_utc)
         
     if clauses:
@@ -799,7 +1092,7 @@ def get_incidents(
             })
         return incidents
     except Exception as e:
-        logger.error(f"Error fetching incidents: {e}")
+        logger.error("Error fetching incidents: {}".format(e))
         raise HTTPException(status_code=500, detail="Database error")
     finally:
         cursor.close()
@@ -807,13 +1100,17 @@ def get_incidents(
 
 @app.get("/api/detections")
 def get_detections(
-    incident_id: Optional[int] = Query(None, description="Filter detections by Incident (Cluster) ID"),
-    class_name: Optional[str] = Query(None, description="Filter by class type: jcb, truck, person")
+    request: Request,
+    incident_id = Query(None, description="Filter detections by Incident (Cluster) ID"),
+    class_name = Query(None, description="Filter by class type: jcb, truck, person")
 ):
     """
     Retrieves individual object detections with coordinates.
     Allows powerful class-level filtering (e.g., viewing ONLY workers/humans)!
     """
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     conn = db_manager.get_connection()
     cursor = conn.cursor()
     
@@ -825,11 +1122,11 @@ def get_detections(
     ph = "?" if is_sqlite else "%s"
     
     if incident_id is not None:
-        clauses.append(f"incident_id = {ph}")
+        clauses.append("incident_id = {}".format(ph))
         params.append(incident_id)
         
     if class_name:
-        clauses.append(f"class_name = {ph}")
+        clauses.append("class_name = {}".format(ph))
         params.append(class_name.lower())
         
     if clauses:
@@ -863,15 +1160,18 @@ def get_detections(
             })
         return detections
     except Exception as e:
-        logger.error(f"Error fetching detections: {e}")
+        logger.error("Error fetching detections: {}".format(e))
         raise HTTPException(status_code=500, detail="Database error")
     finally:
         cursor.close()
         conn.close()
 
 @app.get("/api/stats")
-def get_dashboard_stats():
+def get_dashboard_stats(request: Request):
     """Retrieves aggregate telemetry and spatial count metrics for the widgets."""
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     conn = db_manager.get_connection()
     cursor = conn.cursor()
     
@@ -896,19 +1196,23 @@ def get_dashboard_stats():
             }
         }
     except Exception as e:
-        logger.error(f"Error fetching database statistics: {e}")
+        logger.error("Error fetching database statistics: {}".format(e))
         raise HTTPException(status_code=500, detail="Database error")
     finally:
         cursor.close()
         conn.close()
 
 @app.get("/api/report/pdf")
-def export_pdf_report(severity: Optional[str] = Query(None, description="Filter by severity"),
-                      mission_id: str = Query("BRH-01", description="Mission identifier")):
+def export_pdf_report(request: Request,
+                      severity                = Query(None, description="Filter by severity"),
+                      mission_id      = Query("BRH-01", description="Mission identifier")):
     """
     Generates and streams a PDF incident report.
     Includes incident table, evidence gallery, and GPS coordinate appendix.
     """
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     conn   = db_manager.get_connection()
     cursor = conn.cursor()
     try:
@@ -916,7 +1220,7 @@ def export_pdf_report(severity: Optional[str] = Query(None, description="Filter 
         params = []
         if severity:
             ph = "?" if db_manager.db_type == "sqlite" else "%s"
-            query += f" WHERE severity = {ph}"
+            query += " WHERE severity = {}".format(ph)
             params.append(severity.upper())
         query += " ORDER BY id DESC"
         cursor.execute(query, params)
@@ -938,44 +1242,60 @@ def export_pdf_report(severity: Optional[str] = Query(None, description="Filter 
     pdf_bytes = generate_incident_report(incidents=incidents, mission_id=mission_id)
     from datetime import datetime
     ts = datetime.now().strftime("%Y%m%d_%H%M")
-    filename = f"sand_mining_report_{mission_id}_{ts}.pdf"
+    filename = "sand_mining_report_{}_{}.pdf".format(mission_id, ts)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        headers={"Content-Disposition": 'attachment; filename="{}"'.format(filename)}
     )
 
 
-@app.get("/api/evidence/{filename}")
-# ── FLIGHT CONTROL APIS (MID-FLIGHT SWITCHING & DYNAMIC GEOFENCING) ────────
+#  FLIGHT CONTROL APIS (MID-FLIGHT SWITCHING & DYNAMIC GEOFENCING) 
 @app.get("/api/flight/config")
-def get_flight_config():
+def get_flight_config(request: Request):
     """
     WHAT: REST endpoint returning active flight mission control config.
     WHY: Checked periodically by the drone edge pipeline to load the correct
     model mid-flight and monitor geofenced start coordinates!
     """
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     return flight_config
 
 
 @app.post("/api/flight/config")
-async def update_flight_config(data: Dict[str, Any]):
+async def update_flight_config(request: Request, data: dict):
     """
     WHAT: Endpoint to update active model and geofencing coordinates.
     WHY: Operators can switch YOLOv8 vs YOLOv10 mid-flight or adjust the trigger geofence!
     """
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     global flight_config, has_reached_starting_spot
+    
+    # Save old coordinates to check if they actually changed
+    old_lat = flight_config["start_lat"]
+    old_lng = flight_config["start_lng"]
+    old_rad = flight_config["start_radius_meters"]
+    new_lat = float(data.get("start_lat", flight_config["start_lat"]))
+    new_lng = float(data.get("start_lng", data.get("start_lon", flight_config["start_lng"])))
+    new_rad = float(data.get("start_radius_meters", flight_config["start_radius_meters"]))
+
     flight_config["active_model"]        = data.get("active_model", flight_config["active_model"])
-    flight_config["start_lat"]           = float(data.get("start_lat", flight_config["start_lat"]))
-    # Support longitude mapped as either 'start_lng' or 'start_lon'
-    flight_config["start_lng"]           = float(data.get("start_lng", data.get("start_lon", flight_config["start_lng"])))
-    flight_config["start_radius_meters"] = float(data.get("start_radius_meters", flight_config["start_radius_meters"]))
+    flight_config["start_lat"]           = new_lat
+    flight_config["start_lng"]           = new_lng
+    flight_config["start_radius_meters"] = new_rad
+    flight_config["video_source"]        = data.get("video_source", flight_config.get("video_source", ""))
     flight_config["detection_enabled"]   = bool(data.get("detection_enabled", flight_config["detection_enabled"]))
     
-    # Reset starting spot trigger when operator updates parameters
-    has_reached_starting_spot = False
+    # Reset starting spot trigger only if starting geofence coordinates/radius actually changed!
+    if old_lat != new_lat or old_lng != new_lng or old_rad != new_rad:
+        has_reached_starting_spot = False
+        logger.info(" Geofence start coordinates updated  resetting starting spot trigger.")
     
-    logger.info(f"🛰️ Updated Flight Configuration: {flight_config}")
+    logger.info(" Updated Flight Configuration: {}".format(flight_config))
     
     # Broadcast to all connected WebSocket dashboards so map and parameters update instantly!
     await manager.broadcast({
@@ -985,22 +1305,25 @@ async def update_flight_config(data: Dict[str, Any]):
     return {"status": "ok", "config": flight_config}
 
 
-# ── POSTGRES VPS DIRECT IMAGE RETRIEVAL API ──────────────────────────────────
+#  POSTGRES VPS DIRECT IMAGE RETRIEVAL API 
 @app.get("/api/evidence/db/{incident_id}")
-def get_evidence_image_from_db(incident_id: int):
+def get_evidence_image_from_db(request: Request, incident_id):
     """
     WHAT: Retrieves binary JPEG data directly from PostgreSQL / SQLite blob storage.
     WHY: Allows serving evidence snapshots to the frontend HTML direct from the DB
     without any dependency on the server file system! Includes seamless local
     filesystem fallback for offline/local development.
     """
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     conn = db_manager.get_connection()
     cursor = conn.cursor()
     ph = "%s" if db_manager.db_type == "postgresql" else "?"
     
     try:
         # 1. Try reading the blob and filesystem path from database
-        cursor.execute(f"SELECT evidence_image_blob, evidence_image_path FROM incidents WHERE id = {ph}", (incident_id,))
+        cursor.execute("SELECT evidence_image_blob, evidence_image_path FROM incidents WHERE id = {}".format(ph), (incident_id,))
         row = cursor.fetchone()
         
         if row:
@@ -1024,23 +1347,23 @@ def get_evidence_image_from_db(incident_id: int):
         project_root = Path(__file__).resolve().parent.parent.parent
         detections_dir = project_root / "data" / "detections"
         # Search for files matching evidence_{incident_id}*.jpg or cloud_evidence_{incident_id}*.jpg
-        matches = list(detections_dir.glob(f"evidence_{incident_id}*.jpg"))
+        matches = list(detections_dir.glob("evidence_{}*.jpg".format(incident_id)))
         if not matches:
-            matches = list(detections_dir.glob(f"cloud_evidence_{incident_id}*.jpg"))
+            matches = list(detections_dir.glob("cloud_evidence_{}*.jpg".format(incident_id)))
         if matches:
             with open(matches[0], "rb") as f:
                 return Response(content=f.read(), media_type="image/jpeg")
                 
         raise HTTPException(status_code=404, detail="Incident evidence image not found")
     except Exception as e:
-        logger.error(f"Error serving image from DB: {e}")
+        logger.error("Error serving image from DB: {}".format(e))
         # Try search fallback directly in case of schema/SQL failures
         try:
             project_root = Path(__file__).resolve().parent.parent.parent
             detections_dir = project_root / "data" / "detections"
-            matches = list(detections_dir.glob(f"evidence_{incident_id}*.jpg"))
+            matches = list(detections_dir.glob("evidence_{}*.jpg".format(incident_id)))
             if not matches:
-                matches = list(detections_dir.glob(f"cloud_evidence_{incident_id}*.jpg"))
+                matches = list(detections_dir.glob("cloud_evidence_{}*.jpg".format(incident_id)))
             if matches:
                 with open(matches[0], "rb") as f:
                     return Response(content=f.read(), media_type="image/jpeg")
@@ -1052,8 +1375,12 @@ def get_evidence_image_from_db(incident_id: int):
         cursor.close()
         conn.close()
 
-def get_evidence_image(filename: str):
+@app.get("/api/evidence/{filename}")
+def get_evidence_image(request: Request, filename):
     """Serves a specific evidence JPEG image by filename."""
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     img_path = EVIDENCE_DIR / filename
     if not img_path.exists() or not filename.endswith(".jpg"):
         raise HTTPException(status_code=404, detail="Evidence image not found")
@@ -1062,13 +1389,16 @@ def get_evidence_image(filename: str):
 
 
 @app.get("/api/zone/radius")
-def get_zone_radius():
+def get_zone_radius(request: Request):
     """Returns the currently active buffer radius in metres."""
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     return {"radius_m": active_buffer_radius_m}
 
 
 @app.post("/api/zone/radius")
-async def set_zone_radius(data: Dict[str, Any]):
+async def set_zone_radius(request: Request, data: dict):
     """
     Updates the active zone enforcement radius.
     1. Rebuilds river_buffer_1km.geojson with the new radius (server-side)
@@ -1078,6 +1408,9 @@ async def set_zone_radius(data: Dict[str, Any]):
     """
     global active_buffer_radius_m, global_cluster_engine
 
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
     radius_m = float(data.get("radius_m", 1000.0))
     # Clamp to reasonable operational range
     radius_m = max(250.0, min(radius_m, 5000.0))
@@ -1095,10 +1428,10 @@ async def set_zone_radius(data: Dict[str, Any]):
         loop = asyncio.get_event_loop()
         success = await loop.run_in_executor(None, build_buffer, radius_m)
         if not success:
-            raise HTTPException(status_code=500, detail="Buffer rebuild failed — check centerline data")
+            raise HTTPException(status_code=500, detail="Buffer rebuild failed  check centerline data")
 
     active_buffer_radius_m = radius_m
-    logger.info(f"Zone radius updated to {radius_m:.0f}m by operator")
+    logger.info("Zone radius updated to {}m by operator".format(radius_m))
 
     # Broadcast to all dashboard clients + Jetson sync_worker
     await manager.broadcast({
@@ -1110,8 +1443,15 @@ async def set_zone_radius(data: Dict[str, Any]):
 
 
 # WebSocket endpoint
+# WebSocket endpoint
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    # Extract session_id from cookie to verify connection
+    session_id = websocket.cookies.get("session_id")
+    if not session_id or session_id not in ACTIVE_SESSIONS:
+        await websocket.close(code=1008) # Policy Violation
+        return
+
     await manager.connect(websocket)
     try:
         while True:
@@ -1122,10 +1462,175 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         manager.disconnect(websocket)
 
+# Auth API Endpoints
+@app.post("/api/auth/login")
+async def login(request: Request, response: Response, payload: dict):
+    username = payload.get("username")
+    password = payload.get("password")
+    
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="Missing username or password")
+        
+    conn = db_manager.get_connection()
+    cursor = conn.cursor()
+    
+    is_pg = db_manager.db_type == "postgresql"
+    query = "SELECT password_hash, role FROM users WHERE username = %s;" if is_pg else "SELECT password_hash, role FROM users WHERE username = ?;"
+    
+    try:
+        cursor.execute(query, (username,))
+        row = cursor.fetchone()
+    except Exception as e:
+        logger.error("Error querying user: {}".format(e))
+        raise HTTPException(status_code=500, detail="Database lookup failure")
+    finally:
+        cursor.close()
+        conn.close()
+        
+    if not row or not verify_password(password, row[0]):
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+        
+    role = row[1]
+    
+    # Create session
+    session_id = uuid.uuid4().hex
+    ACTIVE_SESSIONS[session_id] = {
+        "username": username,
+        "role": role
+    }
+    
+    response.set_cookie(
+        key="session_id",
+        value=session_id,
+        httponly=True,
+        max_age=3600 * 24, # 24 hours
+        samesite="lax",
+        secure=False
+    )
+    
+    return {"status": "success", "username": username, "role": role}
+
+ALLOWED_EMAIL_DOMAINS = [".gov", ".gov.in", ".edu", ".edu.in", ".ac.in", ".org", "gmail.com"]
+
+@app.post("/api/auth/register")
+async def register(request: Request, response: Response, payload: dict):
+    username = payload.get("username", "").strip()
+    email = payload.get("email", "").strip().lower()
+    password = payload.get("password", "")
+    
+    if not username or not email or not password:
+        raise HTTPException(status_code=400, detail="Missing required registration fields")
+        
+    # Domain whitelist check
+    is_valid_domain = False
+    for domain in ALLOWED_EMAIL_DOMAINS:
+        if email.endswith(domain):
+            is_valid_domain = True
+            break
+            
+    if not is_valid_domain:
+        raise HTTPException(
+            status_code=400,
+            detail="This is not an authorized email address. Access is restricted to trusted domains (.gov, .edu, .org, gmail.com)."
+        )
+        
+    conn = db_manager.get_connection()
+    cursor = conn.cursor()
+    is_pg = db_manager.db_type == "postgresql"
+    
+    # Check if username or email already exists
+    query = "SELECT id FROM users WHERE username = %s OR email = %s;" if is_pg else "SELECT id FROM users WHERE username = ? OR email = ?;"
+    try:
+        cursor.execute(query, (username, email))
+        if cursor.fetchone():
+            raise HTTPException(status_code=400, detail="Username or email is already registered")
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        logger.error("Error checking user registration: {}".format(e))
+        raise HTTPException(status_code=500, detail="Database lookup error")
+    finally:
+        cursor.close()
+        conn.close()
+        
+    # Hash password
+    salt = uuid.uuid4().hex
+    hashed = hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
+    password_hash = "{}:{}".format(salt, hashed)
+    
+    conn = db_manager.get_connection()
+    cursor = conn.cursor()
+    
+    insert_query = (
+        "INSERT INTO users (username, email, password_hash, role) VALUES (%s, %s, %s, %s);"
+        if is_pg else
+        "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?);"
+    )
+    
+    try:
+        cursor.execute(insert_query, (username, email, password_hash, "operator"))
+        conn.commit()
+    except Exception as e:
+        logger.error("Error inserting registered user: {}".format(e))
+        raise HTTPException(status_code=500, detail="Registration save failure")
+    finally:
+        cursor.close()
+        conn.close()
+        
+    # Create active session
+    session_id = uuid.uuid4().hex
+    ACTIVE_SESSIONS[session_id] = {
+        "username": username,
+        "role": "operator"
+    }
+    
+    response.set_cookie(
+        key="session_id",
+        value=session_id,
+        httponly=True,
+        max_age=3600 * 24, # 24 hours
+        samesite="lax",
+        secure=False
+    )
+    
+    return {"status": "success", "username": username, "role": "operator"}
+
+@app.post("/api/auth/logout")
+async def logout(request: Request, response: Response):
+    session_id = request.cookies.get("session_id")
+    if session_id in ACTIVE_SESSIONS:
+        del ACTIVE_SESSIONS[session_id]
+    response.delete_cookie("session_id")
+    return {"status": "success"}
+
+@app.get("/api/auth/status")
+async def get_auth_status(request: Request):
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
+
+@app.get("/login", response_class=HTMLResponse)
+def get_login_page(request: Request):
+    """Serves the login page, redirects to dashboard if already authenticated."""
+    user = get_session_user(request)
+    if user:
+        return RedirectResponse(url=request.scope.get("root_path", "") + "/", status_code=303)
+        
+    login_path = Path(__file__).resolve().parent / "frontend" / "login.html"
+    if login_path.exists():
+        with open(login_path, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    return HTMLResponse(content="<h1>Login Page Not Found</h1>", status_code=404)
+
 # HTML Server
 @app.get("/", response_class=HTMLResponse)
-def get_dashboard_page():
+def get_dashboard_page(request: Request):
     """Serves the unified, premium dark-themed operator control dashboards."""
+    user = get_session_user(request)
+    if not user:
+        return RedirectResponse(url=request.scope.get("root_path", "") + "/login", status_code=303)
+        
     dashboard_path = Path(__file__).resolve().parent / "frontend" / "index.html"
     if dashboard_path.exists():
         with open(dashboard_path, "r", encoding="utf-8") as f:
@@ -1133,6 +1638,114 @@ def get_dashboard_page():
     else:
         # Fallback basic response if html is missing during initial boot
         return HTMLResponse(content="<h1>Dashboard Page Loading...</h1><p>Please implement frontend/index.html first.</p>")
+
+# Admin Flight Recording Endpoints
+@app.post("/api/admin/record/start")
+async def start_recording(request: Request):
+    user = get_session_user(request)
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden: Admin privilege required.")
+        
+    global is_recording, recording_writer, recording_start_time, recording_filepath, recording_filename, recording_lock
+    import cv2
+    with recording_lock:
+        if is_recording:
+            return {"status": "already_recording", "filename": recording_filename}
+            
+        import datetime
+        timestamp_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        recording_filename = "flight_rec_{}.mp4".format(timestamp_str)
+        recordings_dir = Path(__file__).resolve().parent.parent.parent / "data" / "recordings"
+        recordings_dir.mkdir(parents=True, exist_ok=True)
+        recording_filepath = recordings_dir / recording_filename
+        
+        # Try to use 'avc1' (H.264) for direct native HTML5 browser playback support.
+        # Fall back to standard 'mp4v' if the system's OpenCV has no H.264 encoder.
+        try:
+            fourcc = cv2.VideoWriter_fourcc(*'avc1')
+            recording_writer = cv2.VideoWriter(str(recording_filepath), fourcc, 15.0, (global_video_w, global_video_h))
+            if not recording_writer.isOpened():
+                raise RuntimeError("avc1 writer failed to open")
+        except Exception:
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            recording_writer = cv2.VideoWriter(str(recording_filepath), fourcc, 15.0, (global_video_w, global_video_h))
+        
+        if not recording_writer.isOpened():
+            recording_writer = None
+            raise HTTPException(status_code=500, detail="Failed to initialize video writer.")
+            
+        recording_start_time = time.time()
+        is_recording = True
+        logger.info(" Admin Flight Recording Started: {} ({}x{})".format(recording_filepath, global_video_w, global_video_h))
+        return {"status": "started", "filename": recording_filename}
+
+@app.post("/api/admin/record/stop")
+async def stop_recording(request: Request):
+    user = get_session_user(request)
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden: Admin privilege required.")
+        
+    global is_recording, recording_writer, recording_start_time, recording_filepath, recording_filename, recording_lock
+    with recording_lock:
+        if not is_recording or recording_writer is None:
+            raise HTTPException(status_code=400, detail="No active flight recording to stop.")
+            
+        is_recording = False
+        recording_writer.release()
+        recording_writer = None
+        
+        duration = round(time.time() - recording_start_time, 1)
+        file_size = 0
+        if recording_filepath.exists():
+            file_size = recording_filepath.stat().st_size
+            
+        # Save to DB
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        is_pg = db_manager.db_type == "postgresql"
+        ph = "%s" if is_pg else "?"
+        
+        cursor.execute(
+            "INSERT INTO recordings (filename, filepath, duration_seconds, size_bytes) VALUES ({}, {}, {}, {})".format(ph, ph, ph, ph),
+            (recording_filename, "data/recordings/{}".format(recording_filename), duration, file_size)
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+        logger.info(" Admin Flight Recording Saved: {} ({}s, {} bytes)".format(recording_filename, duration, file_size))
+        return {
+            "status": "stopped",
+            "filename": recording_filename,
+            "duration_seconds": duration,
+            "size_bytes": file_size
+        }
+
+@app.get("/api/admin/recordings")
+async def list_recordings(request: Request):
+    user = get_session_user(request)
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden: Admin privilege required.")
+        
+    conn = db_manager.get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, timestamp, filename, filepath, duration_seconds, size_bytes FROM recordings ORDER BY id DESC")
+    rows = cursor.fetchall()
+    
+    recordings = []
+    for r in rows:
+        ts_val = r[1]
+        ts_formatted = ts_val.replace(" ", "T") + "Z" if ts_val and "Z" not in ts_val and "+" not in ts_val else ts_val
+        recordings.append({
+            "id": r[0],
+            "timestamp": ts_formatted,
+            "filename": r[2],
+            "filepath": r[3],
+            "duration_seconds": r[4],
+            "size_bytes": r[5]
+        })
+    cursor.close()
+    conn.close()
+    return recordings
 
 if __name__ == "__main__":
     import uvicorn

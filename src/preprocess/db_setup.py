@@ -29,7 +29,9 @@ class DatabaseManager:
             self.project_root / "data" / "raw",
             self.project_root / "data" / "processed",
             self.project_root / "data" / "detections",
+            self.project_root / "data" / "recordings",
             self.project_root / "data" / "legal_zones",
+            self.project_root / "data" / "recordings",
             self.project_root / "models" / "weights"
         ]
         for d in dirs:
@@ -98,13 +100,13 @@ class DatabaseManager:
             centroid_latitude {t_double} NOT NULL,
             centroid_longitude {t_double} NOT NULL,
             severity VARCHAR(20) NOT NULL,
-            illegal_zone {t_boolean} NOT NULL DEFAULT 1,
+            illegal_zone {t_boolean} NOT NULL DEFAULT TRUE,
             distance_to_river_m {t_double},
             evidence_image_path VARCHAR(255),
             -- WHAT: New column to store raw binary image bytes directly inside PostgreSQL/SQLite.
             -- WHY: Extracted Jetson snapshots are saved inside the database itself on the VPS!
             evidence_image_blob {t_blob},
-            synced_to_cloud {t_boolean} NOT NULL DEFAULT 0
+            synced_to_cloud {t_boolean} NOT NULL DEFAULT FALSE
         );
         """
 
@@ -129,20 +131,55 @@ class DatabaseManager:
         );
         """
 
+        # 4. Create Users table for authentication
+        users_table = f"""
+        CREATE TABLE IF NOT EXISTS users (
+            id {serial_type},
+            username VARCHAR(100) UNIQUE NOT NULL,
+            email VARCHAR(255),
+            password_hash VARCHAR(255) NOT NULL,
+            role VARCHAR(50) NOT NULL DEFAULT 'operator',
+            created_at {t_timestamptz} NOT NULL DEFAULT {now_default}
+        );
+        """
+
+        # 5. Create Recordings table for storing admin-recorded drone flights
+        recordings_table = f"""
+        CREATE TABLE IF NOT EXISTS recordings (
+            id {serial_type},
+            timestamp {t_timestamptz} NOT NULL DEFAULT {now_default},
+            filename VARCHAR(255) NOT NULL,
+            filepath VARCHAR(255) NOT NULL,
+            duration_seconds {t_double} DEFAULT 0.0,
+            size_bytes BIGINT DEFAULT 0
+        );
+        """
+
         cursor.execute(telemetry_table)
         cursor.execute(incidents_table)
         cursor.execute(detections_table)
+        cursor.execute(users_table)
+        cursor.execute(recordings_table)
 
-        # ── DYNAMIC COLUMN SCHEMA MIGRATIONS ──────────────────────────────
+        #  DYNAMIC COLUMN SCHEMA MIGRATIONS 
         # WHAT: Dynamically append columns if database was pre-created before update.
         # WHY: Ensures existing databases don't break with missing column exceptions.
         if self.db_type == "sqlite":
             cursor.execute("PRAGMA table_info(incidents);")
             columns = [col[1] for col in cursor.fetchall()]
             if "evidence_image_blob" not in columns:
-                logger.info("🔧 Migrating local SQLite: adding evidence_image_blob column to incidents table...")
+                logger.info(" Migrating local SQLite: adding evidence_image_blob column to incidents table...")
                 cursor.execute("ALTER TABLE incidents ADD COLUMN evidence_image_blob BLOB;")
                 conn.commit()
+
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users';")
+            if cursor.fetchone():
+                cursor.execute("PRAGMA table_info(users);")
+                u_columns = [col[1] for col in cursor.fetchall()]
+                if "email" not in u_columns:
+                    logger.info(" Migrating local SQLite: adding email column to users table...")
+                    cursor.execute("ALTER TABLE users ADD COLUMN email VARCHAR(255);")
+                    conn.commit()
         else:
             try:
                 cursor.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS evidence_image_blob BYTEA;")
@@ -151,14 +188,44 @@ class DatabaseManager:
                 conn.rollback()
                 logger.debug(f"Postgres migration check: {e}")
 
-        # 4. Create indexes for high-performance class filtering & real-time map spatial rendering
+            try:
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR(255);")
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                logger.debug(f"Postgres migration check for users email: {e}")
+
+        # Seed default admin user if users table is empty
+        cursor.execute("SELECT COUNT(*) FROM users;")
+        if cursor.fetchone()[0] == 0:
+            logger.info("Seeding default admin account (username: admin, password: SecureSandMining@2026)...")
+            import hashlib
+            import uuid
+            salt = uuid.uuid4().hex
+            hashed = hashlib.sha256((salt + "SecureSandMining@2026").encode('utf-8')).hexdigest()
+            password_hash = f"{salt}:{hashed}"
+            
+            if is_pg:
+                cursor.execute(
+                    "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s);",
+                    ("admin", password_hash, "admin")
+                )
+            else:
+                cursor.execute(
+                    "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?);",
+                    ("admin", password_hash, "admin")
+                )
+
+        # 6. Create indexes for high-performance class filtering & real-time map spatial rendering
         indexes = [
             "CREATE INDEX IF NOT EXISTS idx_telemetry_time ON telemetry_logs (timestamp);",
             "CREATE INDEX IF NOT EXISTS idx_detections_time ON detections (timestamp);",
             "CREATE INDEX IF NOT EXISTS idx_detections_class ON detections (class_name);",
             "CREATE INDEX IF NOT EXISTS idx_detections_incident ON detections (incident_id);",
             "CREATE INDEX IF NOT EXISTS idx_incidents_coords ON incidents (centroid_latitude, centroid_longitude);",
-            "CREATE INDEX IF NOT EXISTS idx_incidents_sync ON incidents (synced_to_cloud);"
+            "CREATE INDEX IF NOT EXISTS idx_incidents_sync ON incidents (synced_to_cloud);",
+            "CREATE INDEX IF NOT EXISTS idx_users_username ON users (username);",
+            "CREATE INDEX IF NOT EXISTS idx_recordings_time ON recordings (timestamp);"
         ]
 
         for idx in indexes:
@@ -167,9 +234,19 @@ class DatabaseManager:
         conn.commit()
         cursor.close()
         conn.close()
-        logger.info(f"✅ Edge database initialization complete. Active: {self.db_type.upper()}")
+        logger.info(f" Edge database initialization complete. Active: {self.db_type.upper()}")
 
 if __name__ == "__main__":
-    # Test execution
-    manager = DatabaseManager(db_type="sqlite")
+    # Try importing from config, fall back to environment variables
+    try:
+        import sys
+        from pathlib import Path
+        project_root = Path(__file__).resolve().parent.parent.parent
+        sys.path.insert(0, str(project_root))
+        from config import DB_TYPE, PG_CONN_STR
+    except ImportError:
+        DB_TYPE = os.getenv("DB_TYPE", "sqlite")
+        PG_CONN_STR = os.getenv("PG_CONN_STR", "")
+    
+    manager = DatabaseManager(db_type=DB_TYPE, pg_conn_str=PG_CONN_STR)
     manager.initialize_database()

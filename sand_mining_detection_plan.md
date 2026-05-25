@@ -1,6 +1,6 @@
-# 🛸 Illegal Sand Mining Detection via Drone — Technical Project Plan
+#  Illegal Sand Mining Detection via Drone  Technical Project Plan
 
-> **Scope**: Detect illegal activity within **0.5 km of riverbed** — specifically clusters of **Trucks, JCBs, and People** — and auto-report their **GPS coordinates**.
+> **Scope**: Detect illegal activity within **0.5 km of riverbed**  specifically clusters of **Trucks, JCBs, and People**  and auto-report their **GPS coordinates**.
 
 ---
 
@@ -22,8 +22,8 @@
 
 | Data Type | Spec | Purpose |
 |---|---|---|
-| **RGB Video / Images** | ≥ 4K, GSD ≤ 5 cm/px | Object detection (trucks, JCBs, people) |
-| **GPS Telemetry Log** | RTK-GPS (±2 cm) preferred | Accurate coordinate projection |
+| **RGB Video / Images** |  4K, GSD  5 cm/px | Object detection (trucks, JCBs, people) |
+| **GPS Telemetry Log** | RTK-GPS (2 cm) preferred | Accurate coordinate projection |
 | **Gimbal Angles** | Yaw, Pitch, Roll per frame | Correct pixel-to-GPS math |
 | **Altitude AGL** | From barometer/rangefinder | GSD calculation |
 | **Timestamp** | Per frame (ISO 8601) | Temporal correlation |
@@ -44,7 +44,7 @@
 - Annotate aerial images with bounding boxes for: `truck`, `jcb`, `person`
 - Tools: **Roboflow** (recommended) or **CVAT**
 - Format: **YOLO TXT** (for YOLOv8 training)
-- Target: **500–1000 labeled instances per class** minimum
+- Target: **5001000 labeled instances per class** minimum
 
 ### D. Existing Datasets to Bootstrap Training
 
@@ -61,25 +61,25 @@
 
 ```
 [Drone in Flight]
-    │
-    ├─ RGB Camera (4K) + RTK-GPS + IMU/Gimbal
-    └─ Edge Compute (optional: Jetson Nano for live detection)
-            │
-            ▼ Raw footage + telemetry log
+    
+     RGB Camera (4K) + RTK-GPS + IMU/Gimbal
+     Edge Compute (optional: Jetson Nano for live detection)
+            
+             Raw footage + telemetry log
 [Ground Station / Cloud Processing]
-    │
-    ├── 1. Telemetry Parser      → GPS + gimbal per frame
-    ├── 2. YOLOv8 Detector       → bboxes: truck / jcb / person
-    ├── 3. GPS Projector         → pixel bbox → lat/lon
-    ├── 4. Zone Checker          → inside 0.5 km buffer? → ILLEGAL
-    ├── 5. DBSCAN Cluster Engine → group nearby detections into sites
-    └── 6. Report Generator      → JSON + PDF + KML map pins
-            │
-            ▼
-[Dashboard — Leaflet.js Map]
-    • Red pins = illegal clusters
-    • Blue boundary = 0.5 km river buffer
-    • Downloadable PDF incident reports
+    
+     1. Telemetry Parser       GPS + gimbal per frame
+     2. YOLOv8 Detector        bboxes: truck / jcb / person
+     3. GPS Projector          pixel bbox  lat/lon
+     4. Zone Checker           inside 0.5 km buffer?  ILLEGAL
+     5. DBSCAN Cluster Engine  group nearby detections into sites
+     6. Report Generator       JSON + PDF + KML map pins
+            
+            
+[Dashboard  Leaflet.js Map]
+     Red pins = illegal clusters
+     Blue boundary = 0.5 km river buffer
+     Downloadable PDF incident reports
 ```
 
 ---
@@ -104,8 +104,8 @@ mosaic: 1.0
 ```
 
 **Performance Targets**
-- mAP@0.5 ≥ 0.80 for all three classes
-- Inference: ≤ 100ms/frame (GPU), ≤ 500ms (Jetson Nano)
+- mAP@0.5  0.80 for all three classes
+- Inference:  100ms/frame (GPU),  500ms (Jetson Nano)
 - Use **SAHI** (Sliced Inference) for small object detection at high altitude
 
 ### Cluster Detection (DBSCAN)
@@ -136,7 +136,7 @@ A cluster with **truck + JCB** or **3+ people** near the river = **HIGH SEVERITY
 
 ## 5. Coordinate Reporting
 
-### Step 1 — Pixel to GPS Projection
+### Step 1  Pixel to GPS Projection
 
 ```python
 from math import radians, cos
@@ -155,9 +155,9 @@ def pixel_to_gps(bbox_center_px, drone_gps, altitude_m,
     return round(lat, 7), round(lon, 7)
 ```
 
-> ✅ **Better accuracy**: Use WebODM to generate a georeferenced orthomosaic (GeoTIFF). Any pixel in the ortho has a direct EPSG coordinate — no math needed, sub-meter accuracy.
+>  **Better accuracy**: Use WebODM to generate a georeferenced orthomosaic (GeoTIFF). Any pixel in the ortho has a direct EPSG coordinate  no math needed, sub-meter accuracy.
 
-### Step 2 — Zone Check
+### Step 2  Zone Check
 
 ```python
 import geopandas as gpd
@@ -170,7 +170,7 @@ def is_in_illegal_zone(lat, lon):
     return river_buffer.geometry.contains(point).any()
 ```
 
-### Step 3 — Incident Report Schema (JSON)
+### Step 3  Incident Report Schema (JSON)
 
 ```json
 {
@@ -205,87 +205,87 @@ def is_in_illegal_zone(lat, lon):
 
 ```
 Sand-Mining_Detection/
-│
-├── data/
-│   ├── raw/                    # Raw drone frames + telemetry logs
-│   ├── processed/              # Orthomosaics (GeoTIFF), tiled frames
-│   ├── annotations/            # YOLO .txt labels + dataset.yaml
-│   └── legal_zones/
-│       ├── river_centerline.shp
-│       └── river_buffer_500m.shp   ← PRE-GENERATE THIS FIRST
-│
-├── models/
-│   └── weights/
-│       ├── yolov8m_sandmining.pt    # Fine-tuned weights
-│       └── yolov8m_sandmining.onnx  # Edge deployment
-│
-├── src/
-│   ├── preprocess/
-│   │   ├── telemetry_parser.py   # GPS/gimbal from .srt/.csv logs
-│   │   ├── frame_extractor.py    # Video → frames
-│   │   └── zone_builder.py       # Build 0.5km river buffer SHP
-│   │
-│   ├── detection/
-│   │   ├── detector.py           # YOLOv8 inference (+ SAHI tiling)
-│   │   ├── gps_projector.py      # Pixel → GPS
-│   │   ├── zone_checker.py       # Is point in illegal zone?
-│   │   └── cluster_engine.py     # DBSCAN clustering
-│   │
-│   ├── reporting/
-│   │   ├── report_generator.py   # Build JSON incident reports
-│   │   ├── pdf_exporter.py       # PDF with images + map
-│   │   └── kml_exporter.py       # KML for Google Earth
-│   │
-│   └── dashboard/
-│       ├── app.py                # FastAPI backend
-│       └── frontend/             # Leaflet.js map UI
-│
-├── notebooks/
-│   ├── 01_zone_builder.ipynb
-│   ├── 02_model_training.ipynb
-│   └── 03_evaluation.ipynb
-│
-└── requirements.txt
+
+ data/
+    raw/                    # Raw drone frames + telemetry logs
+    processed/              # Orthomosaics (GeoTIFF), tiled frames
+    annotations/            # YOLO .txt labels + dataset.yaml
+    legal_zones/
+        river_centerline.shp
+        river_buffer_500m.shp    PRE-GENERATE THIS FIRST
+
+ models/
+    weights/
+        yolov8m_sandmining.pt    # Fine-tuned weights
+        yolov8m_sandmining.onnx  # Edge deployment
+
+ src/
+    preprocess/
+       telemetry_parser.py   # GPS/gimbal from .srt/.csv logs
+       frame_extractor.py    # Video  frames
+       zone_builder.py       # Build 0.5km river buffer SHP
+   
+    detection/
+       detector.py           # YOLOv8 inference (+ SAHI tiling)
+       gps_projector.py      # Pixel  GPS
+       zone_checker.py       # Is point in illegal zone?
+       cluster_engine.py     # DBSCAN clustering
+   
+    reporting/
+       report_generator.py   # Build JSON incident reports
+       pdf_exporter.py       # PDF with images + map
+       kml_exporter.py       # KML for Google Earth
+   
+    dashboard/
+        app.py                # FastAPI backend
+        frontend/             # Leaflet.js map UI
+
+ notebooks/
+    01_zone_builder.ipynb
+    02_model_training.ipynb
+    03_evaluation.ipynb
+
+ requirements.txt
 ```
 
 ---
 
 ## 7. Phased Roadmap (8 Weeks)
 
-### Phase 1 — GIS Setup & Zone Definition (Week 1)
+### Phase 1  GIS Setup & Zone Definition (Week 1)
 - [ ] Download river shapefile for target area (NRSC Bhuvan / OSM)
 - [ ] Generate 0.5 km buffer polygon using GeoPandas
 - [ ] Visually verify buffer on Google Maps
 - [ ] Map legal mining permit zones if available
 
-### Phase 2 — Data Collection & Annotation (Week 2–3)
+### Phase 2  Data Collection & Annotation (Week 23)
 - [ ] Plan drone survey grid (Mission Planner / DJI Pilot 2)
-- [ ] Fly river area at 50–80m AGL, 4K resolution
+- [ ] Fly river area at 5080m AGL, 4K resolution
 - [ ] Extract frames at 2 fps
-- [ ] Annotate 300–500 images per class on Roboflow
+- [ ] Annotate 300500 images per class on Roboflow
 - [ ] Export in YOLO format
 
-### Phase 3 — Model Training (Week 3–4)
+### Phase 3  Model Training (Week 34)
 - [ ] Fine-tune YOLOv8m (start from DOTA/VisDrone pretrain)
-- [ ] Target: mAP@0.5 ≥ 0.80 per class
+- [ ] Target: mAP@0.5  0.80 per class
 - [ ] Export ONNX for edge deployment
 - [ ] Integrate SAHI for small object handling
 
-### Phase 4 — Coordinate & Zone Pipeline (Week 4–5)
+### Phase 4  Coordinate & Zone Pipeline (Week 45)
 - [ ] Build `gps_projector.py`, test vs. known ground truth
 - [ ] Integrate `zone_checker.py` with river buffer SHP
-- [ ] Build `cluster_engine.py` — tune eps=50m, min_samples=2
-- [ ] End-to-end test: video → detections → GPS → zone flag → JSON
+- [ ] Build `cluster_engine.py`  tune eps=50m, min_samples=2
+- [ ] End-to-end test: video  detections  GPS  zone flag  JSON
 
-### Phase 5 — Reporting & Dashboard (Week 5–6)
+### Phase 5  Reporting & Dashboard (Week 56)
 - [ ] Auto-generate PDF incident reports (ReportLab)
 - [ ] KML export for Google Earth
 - [ ] FastAPI backend serving detection results API
 - [ ] Leaflet.js dashboard: buffer overlay + color-coded cluster pins
 
-### Phase 6 — Field Test & Validation (Week 7–8)
+### Phase 6  Field Test & Validation (Week 78)
 - [ ] Live field drone flight over known site
-- [ ] Measure coordinate accuracy vs. handheld GPS (target: ≤ 5m)
+- [ ] Measure coordinate accuracy vs. handheld GPS (target:  5m)
 - [ ] Measure false positive rate, tune confidence thresholds
 - [ ] Generate final validation report
 
@@ -295,11 +295,11 @@ Sand-Mining_Detection/
 
 | Severity | Trigger |
 |---|---|
-| 🔴 **CRITICAL** | JCB + Truck + People cluster inside 0.5 km zone |
-| 🟠 **HIGH** | JCB or Truck + People inside 0.5 km zone |
-| 🟡 **MEDIUM** | Vehicles only (no people) inside 0.5 km zone |
-| 🟢 **LOW** | People only, no machinery, inside 0.5 km zone |
-| ⚪ **INFO** | Any detection beyond 0.5 km — log only |
+|  **CRITICAL** | JCB + Truck + People cluster inside 0.5 km zone |
+|  **HIGH** | JCB or Truck + People inside 0.5 km zone |
+|  **MEDIUM** | Vehicles only (no people) inside 0.5 km zone |
+|  **LOW** | People only, no machinery, inside 0.5 km zone |
+|  **INFO** | Any detection beyond 0.5 km  log only |
 
 ---
 
@@ -322,7 +322,7 @@ Sand-Mining_Detection/
 
 | Challenge | Mitigation |
 |---|---|
-| Small objects at altitude | Fly ≤ 80m AGL; use SAHI sliced inference |
+| Small objects at altitude | Fly  80m AGL; use SAHI sliced inference |
 | GPS projection error | RTK-GPS + WebODM georeferenced ortho |
 | JCB vs. other machinery | Domain-specific training data from Indian riverbeds |
 | People detection at altitude | Fine-tune on VisDrone dataset |

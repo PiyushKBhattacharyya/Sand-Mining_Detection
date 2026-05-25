@@ -95,7 +95,7 @@ class DroneSimulator:
                 
         logger.info(f"Generated {len(self.flight_points)} high-resolution flight points.")
 
-    def generate_dynamic_test_path(self, target_lat: float, target_lon: float, start_radius_meters: float = 500.0):
+    def generate_dynamic_test_path(self, target_lat, target_lon, start_radius_meters = 500.0):
         """
         WHAT: Overwrites the static flight path centerline coordinates with a dynamic 
         launch-to-target flight trajectory.
@@ -106,10 +106,10 @@ class DroneSimulator:
         """
         # If no custom geofence start coordinate has been sent from the VPS yet, do nothing
         if target_lat == 0.0 or target_lon == 0.0:
-            logger.info("⚠️ Geofence start coordinates are 0.0 (unconfigured). Continuing on standard path.")
+            logger.info(" Geofence start coordinates are 0.0 (unconfigured). Continuing on standard path.")
             return
 
-        logger.info(f"🛰️ Dynamically generating launch-to-target path towards geofence: {target_lat}, {target_lon}")
+        logger.info(f" Dynamically generating launch-to-target path towards geofence: {target_lat}, {target_lon}")
 
         # 1. GENERATE RANDOM TAKE-OFF LOCATION (approx 4-6 kilometers away from target)
         random.seed(int(time.time()))
@@ -170,7 +170,7 @@ class DroneSimulator:
 
         # Overwrite the flight points!
         self.flight_points = new_flight_points
-        logger.info(f"✅ Dynamic launch-to-target path successfully generated! Steps: {len(self.flight_points)}")
+        logger.info(f" Dynamic launch-to-target path successfully generated! Steps: {len(self.flight_points)}")
 
 
     def run_simulation(self, duration_seconds=120, frequency_hz=5):

@@ -1,4 +1,4 @@
-# 🛸 Drone-Based Sand Mining Detection — Edge-Cloud Architecture Design
+#  Drone-Based Sand Mining Detection  Edge-Cloud Architecture Design
 
 This document details the end-to-end system architecture for detecting illegal sand mining activities. The architecture leverages a **DJI Drone** equipped with an **NVIDIA Jetson Nano** for edge-level AI inference and local data logging, synchronized with a **Cloud Backend** to power dual real-time operator dashboards.
 
@@ -117,7 +117,7 @@ To achieve low-latency real-time video and data delivery to the cloud, we will u
 
 | Stream Type | Protocol | Why We Choose It |
 |---|---|---|
-| **Raw Video Feed** | **WebRTC / RTSP-over-SRT** | Sub-second latency (100–300ms). Resilient over fluctuating cellular networks (4G/5G). |
+| **Raw Video Feed** | **WebRTC / RTSP-over-SRT** | Sub-second latency (100300ms). Resilient over fluctuating cellular networks (4G/5G). |
 | **Annotated Video Feed (Detections)** | **WebRTC / RTSP-over-SRT** | Overlaid bounding boxes are drawn on the Jetson Nano, encoded, and streamed separately to avoid cloud rendering lag. |
 | **Telemetry & Detections Metadata** | **WebSocket / Socket.IO** | Bi-directional, persistent TCP connection. Allows real-time delivery of GPS telemetry packets (10 Hz) and instant detection alerts. Supports retry buffers if offline. |
 

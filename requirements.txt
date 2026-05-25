@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 geopandas==0.14.3
 fiona==1.9.6
 shapely==2.0.3
@@ -18,25 +17,3 @@ requests>=2.31.0
 websockets>=12.0
 fpdf2>=2.7.9
 Pillow>=10.0.0
-=======
-geopandas==0.10.2
-fiona==1.8.22
-shapely==1.8.5.post1
-pyproj==3.2.1
-folium==0.14.0
-#ultralytics==8.0.6
-opencv-python-headless
-scikit-learn
-numpy==1.19.5
-matplotlib
-seaborn==0.11.2
-streamlit
-protobuf
-fastapi
-uvicorn
-psycopg2-binary
-requests
-websockets
-fpdf2
-Pillow
->>>>>>> a8df66ff4d9c735873243bae440fa569914ac843

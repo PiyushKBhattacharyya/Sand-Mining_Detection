@@ -2,15 +2,15 @@ import math
 from typing import Tuple
 
 def pixel_to_gps(
-    bbox_center_px: Tuple[float, float],
-    drone_gps: Tuple[float, float],
-    altitude_m: float,
-    gimbal_pitch: float,
-    gimbal_yaw: float,
-    img_size_px: Tuple[int, int] = (3840, 2160),  # 4K by default
-    focal_length_mm: float = 24.0,                 # DJI Mavic standard focal length
-    sensor_mm: Tuple[float, float] = (13.2, 8.8)   # DJI 1-inch sensor dimensions
-) -> Tuple[float, float]:
+    bbox_center_px,
+    drone_gps,
+    altitude_m,
+    gimbal_pitch,
+    gimbal_yaw,
+    img_size_px = (3840, 2160),
+    focal_length_mm = 24.0,
+    sensor_mm = (13.2, 8.8)
+):
     """
     Projects a bounding box center pixel to real-world WGS84 GPS Coordinates (latitude, longitude).
     Takes into account the drone GPS, altitude, camera focal length, sensor size, and camera gimbal.

@@ -1,22 +1,22 @@
-# 🚁 Jetson Nano + Real Drone Deployment Guide
+#  Jetson Nano + Real Drone Deployment Guide
 
 ## Architecture Split
 
 ```
-┌─────────────────────────────────────────────┐      Wi-Fi / 4G LTE
-│           JETSON NANO  (on drone)           │ ─────────────────────►  Cloud Server (your PC / VPS)
-│                                             │                         ┌─────────────────────────┐
-│  ┌─────────────┐   ┌──────────────────────┐ │                         │  FastAPI + Dashboard     │
-│  │ Real Camera │──►│  edge_pipeline.py    │ │  POST /api/edge/sync    │  app.py  (port 8000)    │
-│  │ (USB/MIPI)  │   │  (YOLOv8 inference)  │─┼────────────────────────►│                         │
-│  └─────────────┘   └──────────────────────┘ │  POST /api/edge/frame   │  WebSocket → Browser    │
-│                             │               │                         └─────────────────────────┘
-│  ┌─────────────┐            │               │
-│  │ DJI GPS/   │            ▼               │  If network DOWN:
-│  │ Telemetry  │──►  SQLite DB (local SSD)  │  ← All data saved here
-│  │ (UART/USB) │    sync_worker retries ──► │  ← Uploaded when network returns
-│  └─────────────┘                           │
-└─────────────────────────────────────────────┘
+      Wi-Fi / 4G LTE
+           JETSON NANO  (on drone)              Cloud Server (your PC / VPS)
+                                                                      
+                                 FastAPI + Dashboard     
+   Real Camera   edge_pipeline.py       POST /api/edge/sync      app.py  (port 8000)    
+   (USB/MIPI)       (YOLOv8 inference)                           
+        POST /api/edge/frame     WebSocket  Browser    
+                                                                     
+                             
+   DJI GPS/                                If network DOWN:
+   Telemetry    SQLite DB (local SSD)     All data saved here
+   (UART/USB)     sync_worker retries     Uploaded when network returns
+                             
+
 ```
 
 ---
@@ -41,7 +41,7 @@ cd ~/sand_mining
 ```
 
 > [!IMPORTANT]
-> Do **NOT** run `pip install` directly. Jetson uses ARM64 — some wheels need special handling.
+> Do **NOT** run `pip install` directly. Jetson uses ARM64  some wheels need special handling.
 
 ### 4. Create venv + install Jetson-compatible packages
 ```bash
@@ -51,7 +51,7 @@ source .venv/bin/activate
 # OpenCV: use system-linked version (already has CUDA support)
 pip install --no-deps opencv-python  # skip, use system cv2
 
-# PyTorch for Jetson (JetPack 5.x → torch 2.1)
+# PyTorch for Jetson (JetPack 5.x  torch 2.1)
 # Download from: https://developer.nvidia.com/embedded/pytorch
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu114
 
@@ -67,18 +67,18 @@ pip install fastapi uvicorn requests websockets fpdf2 Pillow \
 
 ## Phase B: Connecting the Drone
 
-### Option 1: DJI Enterprise (M300 RTK / M600) — DJI OSDK via UART
+### Option 1: DJI Enterprise (M300 RTK / M600)  DJI OSDK via UART
 
 The Jetson connects to DJI's flight controller via **UART serial** at 921600 baud.
 
 **Wiring:**
 ```
 Jetson GPIO Header         DJI A3/N3/M300 OSDK Port
-─────────────────          ─────────────────────────
-Pin 8  (UART_TX)    ──────  RX
-Pin 10 (UART_RX)    ──────  TX
-Pin 6  (GND)        ──────  GND
-3.3V logic — use level shifter if DJI port is 5V TTL
+          
+Pin 8  (UART_TX)      RX
+Pin 10 (UART_RX)      TX
+Pin 6  (GND)          GND
+3.3V logic  use level shifter if DJI port is 5V TTL
 ```
 
 **Install DJI OSDK:**
@@ -91,7 +91,7 @@ pip install djiosdk-python  # Python bindings
 
 **Replace drone_simulator.py with real telemetry reader:**
 ```python
-# src/preprocess/drone_telemetry.py  (NEW — replaces simulator)
+# src/preprocess/drone_telemetry.py  (NEW  replaces simulator)
 import djiosdk
 vehicle = djiosdk.Vehicle(port="/dev/ttyTHS1", baud=921600)
 
@@ -110,12 +110,12 @@ def get_live_telemetry():
 
 ---
 
-### Option 2: DJI Consumer (Mavic 3E / Air 2S) — DJI Mobile SDK relay
+### Option 2: DJI Consumer (Mavic 3E / Air 2S)  DJI Mobile SDK relay
 
-Consumer drones don't have OSDK. Use a **Mobile SDK relay** via phone → Jetson:
+Consumer drones don't have OSDK. Use a **Mobile SDK relay** via phone  Jetson:
 
 ```
-DJI RC ──► Android Phone (DJI SDK App) ──Wi-Fi──► Jetson ──► Cloud
+DJI RC  Android Phone (DJI SDK App) Wi-Fi Jetson  Cloud
 ```
 
 - Write a small Android app using DJI Mobile SDK that broadcasts telemetry over UDP
@@ -123,7 +123,7 @@ DJI RC ──► Android Phone (DJI SDK App) ──Wi-Fi──► Jetson ──�
 
 ---
 
-### Option 3: Any Drone — MAVLink (ArduPilot / PX4)
+### Option 3: Any Drone  MAVLink (ArduPilot / PX4)
 If your drone runs ArduPilot or PX4:
 ```bash
 pip install dronekit
@@ -150,7 +150,7 @@ def get_live_telemetry():
 
 ### USB Camera (easiest)
 ```python
-# In edge_pipeline.py — replace simulated canvas with:
+# In edge_pipeline.py  replace simulated canvas with:
 import cv2
 cap = cv2.VideoCapture(0)  # /dev/video0 = USB camera
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
@@ -291,16 +291,16 @@ sudo systemctl status sand-mining-edge
 
 | Task | File to modify | Priority |
 |---|---|---|
-| Real telemetry reader (OSDK / MAVLink / UDP) | `src/preprocess/drone_telemetry.py` (new) | 🔴 HIGH |
-| Real camera capture replacing simulator canvas | `src/detection/edge_pipeline.py` | 🔴 HIGH |
-| Config-driven boot (edge/cloud/sim modes) | `main.py` + `config.py` | 🔴 HIGH |
-| Real YOLOv8 weights (trained on mining data) | `models/weights/best.pt` | 🟠 MEDIUM |
-| PostgreSQL setup on Jetson | `db_setup.py` + env vars | 🟡 LOW |
-| HTTPS/auth for cloud endpoint | `app.py` | 🟡 LOW |
+| Real telemetry reader (OSDK / MAVLink / UDP) | `src/preprocess/drone_telemetry.py` (new) |  HIGH |
+| Real camera capture replacing simulator canvas | `src/detection/edge_pipeline.py` |  HIGH |
+| Config-driven boot (edge/cloud/sim modes) | `main.py` + `config.py` |  HIGH |
+| Real YOLOv8 weights (trained on mining data) | `models/weights/best.pt` |  MEDIUM |
+| PostgreSQL setup on Jetson | `db_setup.py` + env vars |  LOW |
+| HTTPS/auth for cloud endpoint | `app.py` |  LOW |
 
 ---
 
-## ❓ Tell me your drone model
+##  Tell me your drone model
 
 The implementation will differ significantly based on your drone:
 

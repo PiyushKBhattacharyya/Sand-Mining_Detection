@@ -13,13 +13,16 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 project_root = Path(__file__).resolve().parent
+# Detect virtual environment path (Windows 'Scripts/python.exe' or Linux/macOS 'bin/python')
 venv_python = project_root / ".venv" / "Scripts" / "python.exe"
+if not venv_python.exists():
+    venv_python = project_root / ".venv" / "bin" / "python"
 
 if not venv_python.exists():
     # Fallback to standard python if venv isn't in expected location
     venv_python = "python"
 
-def rebuild_zones(radius_m: float = 1000.0):
+def rebuild_zones(radius_m = 1000.0):
     """Regenerates the river buffer GeoJSON from the latest centerline."""
     sys.path.insert(0, str(project_root / "src" / "preprocess"))
     # pyrefly: ignore [missing-import]
@@ -29,21 +32,21 @@ def rebuild_zones(radius_m: float = 1000.0):
 
 def run_server():
     """Runs the FastAPI server."""
-    logger.info("🚀 Launching Cloud Backend Dashboard Server (FastAPI)...")
+    logger.info(" Launching Cloud Backend Dashboard Server (FastAPI)...")
     app_path = project_root / "src" / "dashboard" / "app.py"
     subprocess.run([str(venv_python), str(app_path)])
 
 def run_edge_pipeline():
     """Runs the simulated Jetson Nano edge computing loop on the drone."""
-    logger.info("🛸 Powering up Edge Computing Pipeline on DJI Jetson Nano...")
+    logger.info(" Powering up Edge Computing Pipeline on DJI Jetson Nano...")
     pipeline_path = project_root / "src" / "detection" / "edge_pipeline.py"
     subprocess.run([str(venv_python), str(pipeline_path)])
 
 
-def run_webcam_pipeline(server_url: str = "http://localhost:8000",
-                        camera: int = 0, fps: float = 15.0, quality: int = 75):
+def run_webcam_pipeline(server_url = "http://localhost:8000",
+                        camera = 0, fps = 15.0, quality = 75):
     """Streams webcam feeds to the dashboard (drone substitute for local testing)."""
-    logger.info("📷  Starting Webcam Pipeline (drone substitute)...")
+    logger.info("  Starting Webcam Pipeline (drone substitute)...")
     sys.path.insert(0, str(project_root / "src" / "detection"))
     # pyrefly: ignore [missing-import]
     from webcam_pipeline import WebcamPipeline
@@ -91,7 +94,7 @@ def main():
         run_edge_pipeline()
 
     elif args.mode == "webcam":
-        logger.info("🔥 BOOTING WEBCAM SURVEILLANCE MODE...")
+        logger.info(" BOOTING WEBCAM SURVEILLANCE MODE...")
 
         # 0. Rebuild GIS zones from latest centerline
         logger.info("Rebuilding river buffer zone from latest centerline...")
@@ -116,7 +119,7 @@ def main():
             logger.info("Webcam surveillance shutdown by operator.")
 
     elif args.mode == "all":
-        logger.info("🔥 BOOTING SURVEILLANCE ECOSYSTEM END-TO-END...")
+        logger.info(" BOOTING SURVEILLANCE ECOSYSTEM END-TO-END...")
 
         # 0. Rebuild GIS zones from latest centerline
         logger.info("Rebuilding river buffer zone from latest centerline...")
@@ -130,7 +133,7 @@ def main():
         time.sleep(3)
 
         # 2. Start Simulated Drone Edge Pipeline
-        logger.info("🛰️ Initializing drone takeoff sequence...")
+        logger.info(" Initializing drone takeoff sequence...")
         try:
             run_edge_pipeline()
         except KeyboardInterrupt:

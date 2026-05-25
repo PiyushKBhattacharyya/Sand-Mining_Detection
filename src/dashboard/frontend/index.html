@@ -12,7 +12,7 @@
     <!-- Leaflet.js CSS and JS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <!-- Turf.js — client-side spatial analysis for dynamic buffer drawing -->
+    <!-- Turf.js  client-side spatial analysis for dynamic buffer drawing -->
     <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
 
     <style>
@@ -37,7 +37,7 @@
             font-family: 'JetBrains Mono', monospace;
         }
 
-        /* ── Layout helpers ─────────────────────────────────────────── */
+        /*  Layout helpers  */
         .header {
             background: #1f2937;
             border-bottom: 1px solid #374151;
@@ -85,7 +85,7 @@
             overflow: hidden;
         }
 
-        /* ── Cards / panels ─────────────────────────────────────────── */
+        /*  Cards / panels  */
         .card {
             background: #1f2937;
             border: 1px solid #374151;
@@ -93,7 +93,7 @@
             overflow: hidden;
         }
 
-        /* ── Status bar chips ──────────────────────────────────────── */
+        /*  Status bar chips  */
         .chip {
             display: inline-flex;
             align-items: center;
@@ -125,7 +125,7 @@
             background: #22c55e;
         }
 
-        /* ── Buttons ───────────────────────────────────────────────── */
+        /*  Buttons  */
         .btn {
             display: inline-flex;
             align-items: center;
@@ -165,7 +165,7 @@
             background: #991b1b;
         }
 
-        /* ── Video feed containers ─────────────────────────────────── */
+        /*  Video feed containers  */
         .feed-label {
             position: absolute;
             top: 8px;
@@ -211,7 +211,7 @@
             color: #9ca3af;
         }
 
-        /* ── Filter checkboxes ─────────────────────────────────────── */
+        /*  Filter checkboxes  */
         .filter-row {
             display: flex;
             flex-wrap: wrap;
@@ -239,7 +239,7 @@
             accent-color: #3b82f6;
         }
 
-        /* ── Map HUD overlay ───────────────────────────────────────── */
+        /*  Map HUD overlay  */
         .map-hud {
             position: absolute;
             top: 10px;
@@ -286,7 +286,7 @@
             margin: 8px 0;
         }
 
-        /* ── Slider ────────────────────────────────────────────────── */
+        /*  Slider  */
         input[type="range"] {
             width: 100%;
             height: 4px;
@@ -321,7 +321,7 @@
             color: #60a5fa;
         }
 
-        /* ── Map buttons (top-right overlay) ────────────────────────── */
+        /*  Map buttons (top-right overlay)  */
         .map-controls {
             position: absolute;
             top: 10px;
@@ -349,7 +349,7 @@
             color: #60a5fa;
         }
 
-        /* ── Stat cards (tab 2) ────────────────────────────────────── */
+        /*  Stat cards (tab 2)  */
         .stat-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
@@ -384,7 +384,7 @@
             margin-top: 2px;
         }
 
-        /* ── Audit table ───────────────────────────────────────────── */
+        /*  Audit table  */
         .audit-table {
             width: 100%;
             text-align: left;
@@ -419,7 +419,7 @@
             background: #1a2233;
         }
 
-        /* ── Severity badges ───────────────────────────────────────── */
+        /*  Severity badges  */
         .badge {
             display: inline-block;
             padding: 2px 8px;
@@ -491,7 +491,7 @@
             gap: 3px;
         }
 
-        /* ── Evidence panel ────────────────────────────────────────── */
+        /*  Evidence panel  */
         .ev-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -511,7 +511,7 @@
             color: #e5e7eb;
         }
 
-        /* ── Two-column layouts ────────────────────────────────────── */
+        /*  Two-column layouts  */
         .grid-12 {
             display: grid;
             grid-template-columns: 7fr 5fr;
@@ -526,7 +526,7 @@
             gap: 16px;
         }
 
-        /* ── Utility ───────────────────────────────────────────────── */
+        /*  Utility  */
         .hidden {
             display: none !important;
         }
@@ -569,7 +569,7 @@
             color: #e5e7eb;
         }
 
-        /* ── Responsive ────────────────────────────────────────────── */
+        /*  Responsive  */
         @media (max-width: 1024px) {
             .grid-12 {
                 grid-template-columns: 1fr;
@@ -612,13 +612,35 @@
         ::-webkit-scrollbar-thumb:hover {
             background: #4b5563;
         }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(0.95);
+                opacity: 0.5;
+            }
+
+            50% {
+                transform: scale(1.2);
+                opacity: 1;
+            }
+
+            100% {
+                transform: scale(0.95);
+                opacity: 0.5;
+            }
+        }
+
+        .rec-pulse {
+            animation: pulse 1.2s infinite;
+        }
     </style>
 </head>
 
 <body>
 
-    <!-- ═══ HEADER ═══ -->
-    <header class="header">
+    <!--  HEADER  -->
+    <header class="header"
+        style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px;">
         <div>
             <h1 style="font-size:18px; font-weight:700; color:#e5e7eb;">
                 Sand Mining Drone Surveillance
@@ -626,53 +648,79 @@
             <p style="font-size:11px; color:#6b7280; margin-top:2px;">Brahmaputra River Monitoring System</p>
         </div>
 
-        <!-- Status bar -->
-        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
-            <!-- Connection -->
-            <div class="chip">
-                <span>Status:</span>
-                <span id="connection-status"
-                    style="font-weight:700; color:#ef4444; display:flex; align-items:center; gap:4px;">
-                    <span class="dot dot-red"></span> Offline
-                </span>
-            </div>
-            <!-- Battery -->
-            <div class="chip">
-                <span>Battery:</span>
-                <div style="width:50px; height:6px; background:#374151; border-radius:3px; overflow:hidden;">
-                    <div id="battery-bar" style="height:100%; width:0%; background:#22c55e; transition:width 0.5s;">
-                    </div>
+        <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;">
+            <!-- Operator profile and Logout -->
+            <div style="display:flex; gap:10px; align-items:center;">
+                <div class="chip"
+                    style="background: rgba(16, 185, 129, 0.08); border-color: rgba(16, 185, 129, 0.15); color: #10b981; display: flex; align-items: center; gap: 6px;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                        style="opacity: 0.85;">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                    <span id="user-display">Operator</span>
                 </div>
-                <strong id="hud-battery">0%</strong>
+                <button id="btn-browser-webcam" class="map-btn"
+                    style="padding: 4px 10px; font-size: 11px; margin: 0; background: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.3); color: #60a5fa; border-radius: 6px; cursor: pointer; font-family: inherit; font-weight: 600; display: flex; align-items: center; gap: 4px;">
+                    <span id="webcam-btn-dot" style="width:6px; height:6px; border-radius:50%; background:#60a5fa; display:inline-block;"></span>
+                    <span>Use Browser Camera</span>
+                </button>
+                <button id="btn-logout" class="map-btn"
+                    style="padding: 4px 10px; font-size: 11px; margin: 0; background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.3); color: #f87171; border-radius: 6px; cursor: pointer; font-family: inherit; font-weight: 600;">
+                    Logout
+                </button>
             </div>
-            <!-- Altitude -->
-            <div class="chip">
-                <span>Altitude:</span>
-                <strong id="hud-altitude" class="mono">0.0m</strong>
-            </div>
-            <!-- Speed -->
-            <div class="chip">
-                <span>Speed:</span>
-                <strong id="hud-speed" class="mono">0.0 km/h</strong>
-            </div>
-            <!-- Coordinates -->
-            <div class="chip">
-                <span>GPS:</span>
-                <strong id="hud-coordinates" class="mono" style="font-size:11px;">Waiting...</strong>
+
+            <!-- Status bar -->
+            <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+                <!-- Connection -->
+                <div class="chip">
+                    <span>Status:</span>
+                    <span id="connection-status"
+                        style="font-weight:700; color:#ef4444; display:flex; align-items:center; gap:4px;">
+                        <span class="dot dot-red"></span> Offline
+                    </span>
+                </div>
+                <!-- Battery -->
+                <div class="chip">
+                    <span>Battery:</span>
+                    <div style="width:50px; height:6px; background:#374151; border-radius:3px; overflow:hidden;">
+                        <div id="battery-bar" style="height:100%; width:0%; background:#22c55e; transition:width 0.5s;">
+                        </div>
+                    </div>
+                    <strong id="hud-battery">0%</strong>
+                </div>
+                <!-- Altitude -->
+                <div class="chip">
+                    <span>Altitude:</span>
+                    <strong id="hud-altitude" class="mono">0.0m</strong>
+                </div>
+                <!-- Speed -->
+                <div class="chip">
+                    <span>Speed:</span>
+                    <strong id="hud-speed" class="mono">0.0 km/h</strong>
+                </div>
+                <!-- Coordinates -->
+                <div class="chip">
+                    <span>GPS:</span>
+                    <strong id="hud-coordinates" class="mono" style="font-size:11px;">Waiting...</strong>
+                </div>
             </div>
         </div>
     </header>
 
-    <!-- ═══ TABS ═══ -->
+    <!--  TABS  -->
     <div class="tab-bar">
         <button id="btn-tab-tactical" class="tab-btn active">Live Dashboard</button>
         <button id="btn-tab-audit" class="tab-btn">Incident Reports</button>
+        <button id="btn-tab-gallery" class="tab-btn" style="display: none;">Flight Records & Media</button>
     </div>
 
-    <!-- ═══ MAIN CONTENT ═══ -->
+    <!--  MAIN CONTENT  -->
     <main class="main-area">
 
-        <!-- ══════════ TAB 1: LIVE DASHBOARD ══════════ -->
+        <!--  TAB 1: LIVE DASHBOARD  -->
         <div id="tab-tactical" class="flex-col" style="flex:1; gap:16px; min-height:0;">
 
             <!-- Top row: feeds + map -->
@@ -684,21 +732,23 @@
                         <!-- Raw feed -->
                         <div class="card flex-col" style="position:relative;">
                             <span class="feed-label">Drone Camera</span>
-                            <span class="feed-badge feed-badge-rec">● LIVE</span>
+                            <span class="feed-badge feed-badge-rec"> LIVE</span>
                             <div
-                                style="flex:1; background:#111827; display:flex; align-items:center; justify-content:center;">
-                                <img src="/stream/raw" alt="Raw Drone Feed"
+                                style="flex:1; background:#111827; display:flex; align-items:center; justify-content:center; position:relative;">
+                                <img id="img-stream-raw" src="" alt="Raw Drone Feed"
                                     style="width:100%; height:100%; object-fit:cover; aspect-ratio:16/9;" />
+                                <video id="webcam-video" autoplay playsinline muted
+                                    style="display:none; width:100%; height:100%; object-fit:cover; aspect-ratio:16/9; position:absolute; top:0; left:0;"></video>
                             </div>
                         </div>
 
                         <!-- AI detection feed -->
                         <div class="card flex-col" style="position:relative;">
                             <span class="feed-label">AI Detection Feed</span>
-                            <span class="feed-badge feed-badge-ai">● DETECTING</span>
+                            <span class="feed-badge feed-badge-ai"> DETECTING</span>
                             <div
                                 style="flex:1; background:#111827; display:flex; align-items:center; justify-content:center;">
-                                <img src="/stream/overlay" alt="AI Detection Feed"
+                                <img id="img-stream-overlay" src="" alt="AI Detection Feed"
                                     style="width:100%; height:100%; object-fit:cover; aspect-ratio:16/9;" />
                             </div>
                         </div>
@@ -716,73 +766,125 @@
                         </label>
                         <label class="filter-item">
                             <input type="checkbox" id="filter-person" checked class="class-filter">
-                            <span style="color:#4ade80;">● Humans / Workers</span>
+                            <span style="color:#4ade80;"> Humans / Workers</span>
                         </label>
                         <label class="filter-item">
                             <input type="checkbox" id="filter-jcb" checked class="class-filter">
-                            <span style="color:#fbbf24;">● Excavators / JCBs</span>
+                            <span style="color:#fbbf24;"> Excavators / JCBs</span>
                         </label>
                         <label class="filter-item">
                             <input type="checkbox" id="filter-truck" checked class="class-filter">
-                            <span style="color:#60a5fa;">● Dumper Trucks</span>
+                            <span style="color:#60a5fa;"> Dumper Trucks</span>
                         </label>
                     </div>
                 </div>
 
                 <!-- Right: Map -->
                 <div class="card" style="position:relative; display:flex; flex-direction:column;">
-                                        <!-- Map HUD (With Dynamic Command Center) -->
+                    <!-- Map HUD (With Dynamic Command Center) -->
                     <div id="map-hud" class="map-hud" style="width: 250px;">
                         <h4>Tactical Command HUD</h4>
                         <div style="font-size:11px; color:#4ade80; font-weight:600;">
                             <span class="status-dot"></span> Live Telemetry Connected
                         </div>
                         <div class="divider" style="margin: 6px 0;"></div>
-                        
+
                         <div class="info-row">
                             <span>Active Buffer:</span>
                             <span class="val" id="active-zone-label" style="color:#f87171;">1.0 km</span>
                         </div>
                         <input id="buffer-slider" type="range" min="250" max="3000" step="250" value="1000">
-                        
+
                         <div class="divider" style="margin: 8px 0;"></div>
-                        
-                        <!-- ── DYNAMIC MID-FLIGHT MODEL SWITCHER ── -->
-                        <h4 style="font-size: 11px; margin-bottom: 4px; color: #60a5fa;">Mid-Flight AI Model:</h4>
-                        <select id="model-select" style="width:100%; padding: 4px; font-size:11px; background:#111827; border:1px solid #374151; color:#fff; border-radius:4px; outline:none; margin-bottom: 6px;">
-                            <option value="yolov8n.pt">YOLOv8 Nano (Fastest)</option>
-                            <option value="yolov8m.pt">YOLOv8 Medium (Accurate)</option>
-                            <option value="yolov10n.pt">YOLOv10 Nano (Optimal)</option>
-                            <option value="custom_river_model.pt">Custom Fine-Tuned Model</option>
-                        </select>
-                        
-                        <!-- ── DYNAMIC GEOFENCE START TRIGGER CONTROLS ── -->
-                        <h4 style="font-size: 11px; margin-bottom: 4px; color: #34d399;">Detection Start Geofence:</h4>
-                        <div style="display:flex; flex-direction:column; gap:4px; margin-bottom:6px;">
-                            <div class="info-row">
-                                <span>Start Lat:</span>
-                                <input type="number" id="geofence-lat" value="0.0" step="0.0001" style="width:100px; padding:2px; font-size:10px; background:#111827; border:1px solid #374151; color:#fff; text-align:center; border-radius:3px;">
+
+                        <!--  ADMIN FLIGHT RECORDING SYSTEM  -->
+                        <div id="admin-record-section" style="display: none;">
+                            <h4
+                                style="font-size: 11px; margin-bottom: 6px; color: #f87171; display: flex; align-items: center; gap: 6px;">
+                                <span id="rec-pulse-dot" class="rec-pulse"
+                                    style="display:none; width: 8px; height: 8px; border-radius: 50%; background-color: #ef4444; box-shadow: 0 0 8px #ef4444;"></span>
+                                Flight Recording Console
+                            </h4>
+                            <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+                                <button id="btn-start-record" class="map-btn"
+                                    style="flex: 1; padding: 4px 6px; font-size: 10px; background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.3); color: #f87171; border-radius: 4px; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                                    <svg width="8" height="8" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                                        <circle cx="50" cy="50" r="40" fill="#ef4444" />
+                                    </svg>
+                                    Start REC
+                                </button>
+                                <button id="btn-stop-record" class="map-btn" disabled
+                                    style="flex: 1; padding: 4px 6px; font-size: 10px; background: rgba(55, 65, 81, 0.5); border-color: rgba(75, 85, 99, 0.3); color: #9ca3af; border-radius: 4px; display: flex; align-items: center; justify-content: center; gap: 4px; cursor: not-allowed;">
+                                    <svg width="8" height="8" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                                        <rect x="15" y="15" width="70" height="70" fill="#9ca3af" />
+                                    </svg>
+                                    Stop REC
+                                </button>
                             </div>
-                            <div class="info-row">
-                                <span>Start Lon:</span>
-                                <input type="number" id="geofence-lon" value="0.0" step="0.0001" style="width:100px; padding:2px; font-size:10px; background:#111827; border:1px solid #374151; color:#fff; text-align:center; border-radius:3px;">
+                            <div id="recording-status-text"
+                                style="font-size: 9px; color: #9ca3af; margin-bottom: 8px; font-style: italic;">
+                                Status: Standby
                             </div>
-                            <div class="info-row">
-                                <span>Start Radius:</span>
-                                <select id="geofence-radius" style="width:100px; padding:2px; font-size:10px; background:#111827; border:1px solid #374151; color:#fff; border-radius:3px; outline:none;">
-                                    <option value="250">250m</option>
-                                    <option value="500" selected>500m</option>
-                                    <option value="1000">1000m</option>
-                                    <option value="2000">2000m</option>
-                                </select>
-                            </div>
+                            <div class="divider" style="margin: 8px 0;"></div>
                         </div>
-                        <div style="font-size: 9px; color: #9ca3af; margin-bottom: 6px; font-style: italic;">
-                            💡 Tip: Double-click anywhere on the map to set the geofence start coordinates!
+
+                        <!--  COLLAPSIBLE ADVANCED PARAMETERS TO KEEP UI SIMPLE  -->
+                        <div style="text-align:center; margin: 6px 0 2px 0;">
+                            <button id="btn-toggle-advanced-hud" type="button"
+                                style="background:transparent; border:none; color:#60a5fa; font-size:10px; cursor:pointer; text-decoration:underline; font-weight:600; outline:none; padding:2px 4px;">
+                                Show Advanced Settings
+                            </button>
                         </div>
-                        
-                        <div style="display:flex; gap:4px; margin-top:8px;">
-                            <button id="btn-save-flight-cfg" class="btn btn-primary" style="width:100%; justify-content:center; padding:4px 8px; font-size:10px;">Apply Flight Parameters</button>
+
+                        <div id="hud-advanced-settings" style="display: none; border-top: 1px solid #374151; padding-top: 8px; margin-top: 6px;">
+                            <!--  DYNAMIC DYNAMIC VIDEO / RTMP SOURCE  -->
+                            <h4 style="font-size: 11px; margin-bottom: 4px; color: #f43f5e;">Live Drone Stream Source:</h4>
+                            <input type="text" id="stream-source-input" placeholder="e.g. rtmp://domain/live/key or 0"
+                                style="width:95%; padding: 4px 6px; font-size:11px; background:#111827; border:1px solid #374151; color:#fff; border-radius:4px; outline:none; margin-bottom: 8px;">
+
+                            <!--  DYNAMIC MID-FLIGHT MODEL SWITCHER  -->
+                            <h4 style="font-size: 11px; margin-bottom: 4px; color: #60a5fa;">Mid-Flight AI Model:</h4>
+                            <select id="model-select"
+                                style="width:100%; padding: 4px; font-size:11px; background:#111827; border:1px solid #374151; color:#fff; border-radius:4px; outline:none; margin-bottom: 6px;">
+                                <option value="yolov8n.pt">YOLOv8 Nano (Fastest)</option>
+                                <option value="yolov8m.pt">YOLOv8 Medium (Accurate)</option>
+                                <option value="yolov10n.pt">YOLOv10 Nano (Optimal)</option>
+                                <option value="custom_river_model.pt">Custom Fine-Tuned Model</option>
+                            </select>
+
+                            <!--  DYNAMIC GEOFENCE START TRIGGER CONTROLS  -->
+                            <h4 style="font-size: 11px; margin-bottom: 4px; color: #34d399;">Detection Start Geofence:</h4>
+                            <div style="display:flex; flex-direction:column; gap:4px; margin-bottom:6px;">
+                                <div class="info-row">
+                                    <span>Start Lat:</span>
+                                    <input type="number" id="geofence-lat" value="0.0" step="0.0001"
+                                        style="width:100px; padding:2px; font-size:10px; background:#111827; border:1px solid #374151; color:#fff; text-align:center; border-radius:3px;">
+                                </div>
+                                <div class="info-row">
+                                    <span>Start Lon:</span>
+                                    <input type="number" id="geofence-lon" value="0.0" step="0.0001"
+                                        style="width:100px; padding:2px; font-size:10px; background:#111827; border:1px solid #374151; color:#fff; text-align:center; border-radius:3px;">
+                                </div>
+                                <div class="info-row">
+                                    <span>Start Radius:</span>
+                                    <select id="geofence-radius"
+                                        style="width:100px; padding:2px; font-size:10px; background:#111827; border:1px solid #374151; color:#fff; border-radius:3px; outline:none;">
+                                        <option value="250">250m</option>
+                                        <option value="500" selected>500m</option>
+                                        <option value="1000">1000m</option>
+                                        <option value="2000">2000m</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div style="font-size: 9px; color: #9ca3af; margin-bottom: 6px; font-style: italic;">
+                                Tip: Double-click anywhere on the map to set the geofence start coordinates!
+                            </div>
+
+                            <div style="display:flex; gap:4px; margin-top:8px;">
+                                <button id="btn-save-flight-cfg" class="btn btn-primary"
+                                    style="width:100%; justify-content:center; padding:4px 8px; font-size:10px;">Apply
+                                    Flight Parameters</button>
+                            </div>
                         </div>
                     </div>
 
@@ -805,7 +907,7 @@
             </div>
         </div>
 
-        <!-- ══════════ TAB 2: INCIDENT REPORTS ══════════ -->
+        <!--  TAB 2: INCIDENT REPORTS  -->
         <div id="tab-audit" class="hidden flex-col" style="flex:1; gap:20px; overflow-y:auto;">
 
             <!-- Stat cards -->
@@ -843,18 +945,25 @@
                         <button id="refresh-audits" class="btn">Refresh</button>
                     </div>
                     <!-- Filter Control Bar -->
-                    <div style="padding: 10px 16px; background: #1f2937; border-bottom: 1px solid #374151; display: flex; flex-wrap: wrap; gap: 14px; align-items: center;">
+                    <div
+                        style="padding: 10px 16px; background: #1f2937; border-bottom: 1px solid #374151; display: flex; flex-wrap: wrap; gap: 14px; align-items: center;">
                         <div style="display: flex; align-items: center; gap: 6px;">
-                            <label for="filter-start" style="font-size: 10px; font-weight: 600; color: #9ca3af; text-transform: uppercase;">From:</label>
-                            <input type="datetime-local" id="filter-start" style="padding: 4px 8px; font-size: 11px; background: #111827; border: 1px solid #374151; color: #e5e7eb; border-radius: 4px; color-scheme: dark; outline: none;">
+                            <label for="filter-start"
+                                style="font-size: 10px; font-weight: 600; color: #9ca3af; text-transform: uppercase;">From:</label>
+                            <input type="datetime-local" id="filter-start"
+                                style="padding: 4px 8px; font-size: 11px; background: #111827; border: 1px solid #374151; color: #e5e7eb; border-radius: 4px; color-scheme: dark; outline: none;">
                         </div>
                         <div style="display: flex; align-items: center; gap: 6px;">
-                            <label for="filter-end" style="font-size: 10px; font-weight: 600; color: #9ca3af; text-transform: uppercase;">To:</label>
-                            <input type="datetime-local" id="filter-end" style="padding: 4px 8px; font-size: 11px; background: #111827; border: 1px solid #374151; color: #e5e7eb; border-radius: 4px; color-scheme: dark; outline: none;">
+                            <label for="filter-end"
+                                style="font-size: 10px; font-weight: 600; color: #9ca3af; text-transform: uppercase;">To:</label>
+                            <input type="datetime-local" id="filter-end"
+                                style="padding: 4px 8px; font-size: 11px; background: #111827; border: 1px solid #374151; color: #e5e7eb; border-radius: 4px; color-scheme: dark; outline: none;">
                         </div>
                         <div style="display: flex; align-items: center; gap: 6px;">
-                            <label for="filter-severity" style="font-size: 10px; font-weight: 600; color: #9ca3af; text-transform: uppercase;">Severity:</label>
-                            <select id="filter-severity" style="padding: 4px 8px; font-size: 11px; background: #111827; border: 1px solid #374151; color: #e5e7eb; border-radius: 4px; color-scheme: dark; outline: none;">
+                            <label for="filter-severity"
+                                style="font-size: 10px; font-weight: 600; color: #9ca3af; text-transform: uppercase;">Severity:</label>
+                            <select id="filter-severity"
+                                style="padding: 4px 8px; font-size: 11px; background: #111827; border: 1px solid #374151; color: #e5e7eb; border-radius: 4px; color-scheme: dark; outline: none;">
                                 <option value="">ALL</option>
                                 <option value="EXTREME">EXTREME</option>
                                 <option value="SEVERE">SEVERE</option>
@@ -863,11 +972,13 @@
                             </select>
                         </div>
                         <div style="display: flex; gap: 6px; margin-left: auto;">
-                            <button id="btn-filter-apply" class="btn" style="padding: 4px 10px; font-size: 10px; background: #2563eb; border-color: #3b82f6; color: #fff; font-weight: 600;">Apply</button>
-                            <button id="btn-filter-clear" class="btn" style="padding: 4px 10px; font-size: 10px; background: transparent; border-color: #4b5563; color: #9ca3af;">Clear</button>
+                            <button id="btn-filter-apply" class="btn"
+                                style="padding: 4px 10px; font-size: 10px; background: #2563eb; border-color: #3b82f6; color: #fff; font-weight: 600;">Apply</button>
+                            <button id="btn-filter-clear" class="btn"
+                                style="padding: 4px 10px; font-size: 10px; background: transparent; border-color: #4b5563; color: #9ca3af;">Clear</button>
                         </div>
                     </div>
-                    <div class="flex-grow overflow-y">
+                    <div class="flex-grow overflow-y" style="max-height: 620px; overflow-y: auto;">
                         <table class="audit-table">
                             <thead>
                                 <tr>
@@ -891,7 +1002,7 @@
 
                 <!-- Evidence / detail panel -->
                 <div class="card"
-                    style="padding:16px; display:flex; flex-direction:column; justify-content:space-between;">
+                    style="padding:16px; display:flex; flex-direction:column; justify-content:space-between; position: sticky; top: 10px; align-self: start;">
                     <div>
                         <h3
                             style="font-size:12px; font-weight:700; text-transform:uppercase; color:#6b7280; margin-bottom:12px; padding-bottom:8px; border-bottom:1px solid #374151;">
@@ -900,7 +1011,7 @@
 
                         <!-- Empty state -->
                         <div id="evidence-empty" style="text-align:center; padding:40px 0; color:#6b7280;">
-                            <div style="font-size:32px; margin-bottom:8px;">📂</div>
+                            <div style="font-size:32px; margin-bottom:8px;"></div>
                             <div style="font-size:12px; font-weight:500;">Select an incident from the table to view
                                 details.</div>
                         </div>
@@ -960,31 +1071,283 @@
                 </div>
             </div>
         </div>
+
+        <!--  TAB 3: FLIGHT RECORDS & GALLERY  -->
+        <div id="tab-gallery" class="hidden flex-col" style="flex:1; gap:20px; overflow-y:auto;">
+            <div class="grid-12" style="flex:1; gap:20px; min-height:0;">
+                <!-- Left: Flight Recording List -->
+                <div class="card flex-col" style="flex: 5; padding:16px; min-height: 450px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                        <div>
+                            <h3
+                                style="font-size:14px; font-weight:700; color:#e5e7eb; display:flex; align-items:center; gap:6px;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                                    style="color:#f87171;">
+                                    <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+                                    <line x1="7" y1="2" x2="7" y2="22"></line>
+                                    <line x1="17" y1="2" x2="17" y2="22"></line>
+                                    <line x1="2" y1="12" x2="22" y2="12"></line>
+                                    <line x1="2" y1="7" x2="7" y2="7"></line>
+                                    <line x1="2" y1="17" x2="7" y2="17"></line>
+                                    <line x1="17" y1="17" x2="22" y2="17"></line>
+                                    <line x1="17" y1="7" x2="22" y2="7"></line>
+                                </svg>
+                                Flight Video Archives
+                            </h3>
+                            <p style="font-size:11px; color:#6b7280; margin-top:2px;">Recorded surveillance logs from
+                                DJI Drone</p>
+                        </div>
+                        <button id="btn-refresh-gallery" class="map-btn"
+                            style="padding: 4px 10px; font-size:11px; margin:0; background:rgba(96, 165, 250, 0.1); border-color:rgba(96, 165, 250, 0.2); color:#60a5fa; border-radius:6px; cursor:pointer;">
+                            Refresh Logs
+                        </button>
+                    </div>
+
+                    <div class="flex-grow" style="overflow-y:auto; max-height:480px;">
+                        <table class="audit-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Timestamp</th>
+                                    <th>Duration</th>
+                                    <th>Size</th>
+                                    <th style="text-align:right;">Control</th>
+                                </tr>
+                            </thead>
+                            <tbody id="gallery-list-body">
+                                <tr>
+                                    <td colspan="5" style="padding:30px; text-align:center; color:#6b7280;">No flight
+                                        recordings found. Start a mission and toggle REC to capture feeds.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Right: Active Video Player -->
+                <div class="card flex-col"
+                    style="flex: 7; padding:16px; justify-content:space-between; min-height: 450px;">
+                    <div>
+                        <h3
+                            style="font-size:12px; font-weight:700; text-transform:uppercase; color:#6b7280; margin-bottom:16px; padding-bottom:8px; border-bottom:1px solid #374151;">
+                            Surveillance Feed Playback
+                        </h3>
+
+                        <!-- Standby State -->
+                        <div id="player-empty" style="text-align:center; padding:100px 0; color:#6b7280;">
+                            <div style="font-size:42px; margin-bottom:12px; opacity:0.8;"></div>
+                            <div style="font-size:13px; font-weight:600; color:#e5e7eb;">No Media Selected</div>
+                            <div style="font-size:11px; margin-top:4px;">Select a recorded flight archive from the list
+                                to begin playback.</div>
+                        </div>
+
+                        <!-- Active Video Container -->
+                        <div id="player-active" class="hidden" style="display:flex; flex-direction:column; gap:16px;">
+                            <div
+                                style="background:#090d16; border-radius:6px; overflow:hidden; border:1px solid #1f2937; position:relative; aspect-ratio:16/9; display:flex; align-items:center; justify-content:center;">
+                                <video id="gallery-video-player" controls
+                                    style="width:100%; height:100%; object-fit:contain; outline:none; background:#000;">
+                                    Your browser does not support the video tag.
+                                </video>
+                            </div>
+
+                            <div
+                                style="background: rgba(17, 24, 39, 0.5); border: 1px solid #1f2937; border-radius: 6px; padding: 12px; display:flex; flex-direction:column; gap:8px;">
+                                <div style="display:flex; justify-content:space-between; font-size:11px;">
+                                    <span style="color:#9ca3af; font-weight:500;">File Path:</span>
+                                    <span id="player-filepath" style="color:#e5e7eb;"
+                                        class="mono">data/recordings/unknown.mp4</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; font-size:11px;">
+                                    <span style="color:#9ca3af; font-weight:500;">Size:</span>
+                                    <span id="player-filesize" style="color:#e5e7eb;" class="mono">0.0 MB</span>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; font-size:11px;">
+                                    <span style="color:#9ca3af; font-weight:500;">Duration:</span>
+                                    <span id="player-duration" style="color:#e5e7eb;" class="mono">0.0 seconds</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="player-actions" class="hidden"
+                        style="border-top:1px solid #374151; padding-top:12px; margin-top:12px; display:flex; gap:8px;">
+                        <a id="lnk-download-video" href="#" download class="btn btn-primary"
+                            style="flex:1; justify-content:center; text-decoration:none; padding:8px 0; text-align:center; font-size:11px;">
+                            Download Video File
+                        </a>
+                        <a id="lnk-external-video" href="#" target="_blank" class="btn"
+                            style="flex:1; justify-content:center; text-decoration:none; padding:8px 0; text-align:center; font-size:11px; border-color:#4b5563; color:#9ca3af;">
+                            Open in New Tab
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
     </main>
 
-    <!-- ═══════════════════════ JAVASCRIPT (UNCHANGED LOGIC) ═══════════════════════ -->
+    <!--  JAVASCRIPT (UNCHANGED LOGIC)  -->
     <script>
+        // Dynamic subpath base path detection
+        const BASE_PATH = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+
+        // Bind dynamic video streaming URLs
+        document.getElementById('img-stream-raw').src = BASE_PATH + 'stream/raw';
+        document.getElementById('img-stream-overlay').src = BASE_PATH + 'stream/overlay';
+
+        // Browser webcam capture, display, and VPS HTTP frames relay loop!
+        // This is exact local webcam integration directly inside the user's browser,
+        // sending real-time frames to the VPS for YOLO processing and live DB incident capturing/evidence saving!
+        (function initBrowserWebcamRelay() {
+            const btnCam = document.getElementById('btn-browser-webcam');
+            const dot = document.getElementById('webcam-btn-dot');
+            const videoEl = document.getElementById('webcam-video');
+            const imgRaw = document.getElementById('img-stream-raw');
+            
+            let stream = null;
+            let active = false;
+            let timer = null;
+
+            btnCam.addEventListener('click', async () => {
+                if (active) {
+                    stopWebcam();
+                } else {
+                    await startWebcam();
+                }
+            });
+
+            async function startWebcam() {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    alert(
+                        "Browser Security Restriction (Insecure Origin)\n\n" +
+                        "All modern browsers (Safari, Chrome, Firefox) strictly block camera access on plain HTTP connections (http://187.127.142.58).\n\n" +
+                        "To use your camera on the VPS, choose ONE of these two easy developer bypasses:\n\n" +
+                        "Option A (Instant Developer Bypass - RECOMMENDED):\n" +
+                        "Run this command in your Mac terminal to forward the port securely:\n" +
+                        "   ssh -N -L 8000:localhost:8000 -p 2222 root@187.127.142.58\n" +
+                        "Then open: http://localhost:8000/sand-mining/\n" +
+                        "(Browsers treat 'localhost' as 100% secure, so camera access works instantly!)\n\n" +
+                        "Option B (Configure Domain & SSL):\n" +
+                        "Add an A Record in Hostinger for sandmining.nielitbhubaneswar.in pointing to 187.127.142.58, then run 'certbot --nginx' on the VPS to enable secure HTTPS."
+                    );
+                    stopWebcam();
+                    return;
+                }
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        video: { width: { ideal: 640 }, height: { ideal: 360 }, frameRate: { ideal: 15 } },
+                        audio: false
+                    });
+                    videoEl.srcObject = stream;
+                    videoEl.style.display = 'block';
+                    imgRaw.style.display = 'none'; // Overlap raw image with actual local webcam display element for zero latency!
+                    
+                    active = true;
+                    btnCam.style.background = 'rgba(16, 185, 129, 0.15)';
+                    btnCam.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+                    btnCam.style.color = '#34d399';
+                    dot.style.background = '#34d399';
+                    btnCam.querySelector('span:not(#webcam-btn-dot)').textContent = 'Browser Camera: ON';
+
+                    // Launch frame relay loop (12-15 FPS)
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 640;
+                    canvas.height = 360;
+                    const ctx = canvas.getContext('2d');
+
+                    timer = setInterval(() => {
+                        if (videoEl.readyState === videoEl.HAVE_CURRENT_DATA || videoEl.readyState === videoEl.HAVE_ENOUGH_DATA) {
+                            // Flip canvas horizontally to correct mirroring on the uploaded stream
+                            ctx.save();
+                            ctx.translate(canvas.width, 0);
+                            ctx.scale(-1, 1);
+                            ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+                            ctx.restore();
+
+                            canvas.toBlob((blob) => {
+                                if (blob) {
+                                    fetch(BASE_PATH + 'api/edge/frame?stream_type=raw', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'image/jpeg' },
+                                        body: blob
+                                    }).catch(err => console.debug('Webcam POST upload dropped:', err));
+                                }
+                            }, 'image/jpeg', 0.70);
+                        }
+                    }, 80); // Send frame every 80ms (~12 FPS)
+                } catch (err) {
+                    alert('Could not access browser webcam: ' + err.message + '\nMake sure camera permission is granted in your browser settings.');
+                    stopWebcam();
+                }
+            }
+
+            function stopWebcam() {
+                if (timer) {
+                    clearInterval(timer);
+                    timer = null;
+                }
+                if (stream) {
+                    stream.getTracks().forEach(track => track.stop());
+                    stream = null;
+                }
+                videoEl.srcObject = null;
+                videoEl.style.display = 'none';
+                imgRaw.style.display = 'block';
+
+                active = false;
+                btnCam.style.background = 'rgba(59, 130, 246, 0.15)';
+                btnCam.style.borderColor = 'rgba(59, 130, 246, 0.3)';
+                btnCam.style.color = '#60a5fa';
+                dot.style.background = '#60a5fa';
+                btnCam.querySelector('span:not(#webcam-btn-dot)').textContent = 'Use Browser Camera';
+            }
+            
+            // Auto-trigger webcam start immediately on page load so it's a completely seamless out-of-the-box experience!
+            window.addEventListener('DOMContentLoaded', () => {
+                setTimeout(() => {
+                    startWebcam().catch(e => console.log('Auto-start webcam blocked until interaction:', e));
+                }, 1000);
+            });
+        })();
+
         // DOM Handles
         const tabTactical = document.getElementById('tab-tactical');
         const tabAudit = document.getElementById('tab-audit');
+        const tabGallery = document.getElementById('tab-gallery');
         const btnTabTactical = document.getElementById('btn-tab-tactical');
         const btnTabAudit = document.getElementById('btn-tab-audit');
+        const btnTabGallery = document.getElementById('btn-tab-gallery');
 
         // Tab switching
         btnTabTactical.addEventListener('click', () => {
             tabTactical.classList.remove('hidden');
             tabAudit.classList.add('hidden');
+            tabGallery.classList.add('hidden');
             btnTabTactical.classList.add('active');
             btnTabAudit.classList.remove('active');
+            btnTabGallery.classList.remove('active');
             setTimeout(() => { map.invalidateSize() }, 100);
         });
 
         btnTabAudit.addEventListener('click', () => {
             tabAudit.classList.remove('hidden');
             tabTactical.classList.add('hidden');
+            tabGallery.classList.add('hidden');
             btnTabAudit.classList.add('active');
             btnTabTactical.classList.remove('active');
+            btnTabGallery.classList.remove('active');
             loadAuditData();
+        });
+
+        btnTabGallery.addEventListener('click', () => {
+            tabGallery.classList.remove('hidden');
+            tabTactical.classList.add('hidden');
+            tabAudit.classList.add('hidden');
+            btnTabGallery.classList.add('active');
+            btnTabTactical.classList.remove('active');
+            btnTabAudit.classList.remove('active');
+            loadGalleryData();
         });
 
         // Initialize Leaflet Map
@@ -1092,7 +1455,7 @@
             });
         });
 
-        // ── Dynamic Buffer via Turf.js ──────────────────────────────────
+        //  Dynamic Buffer via Turf.js 
         let bufferLayer = null;
         let centerlineGeoJSON = null;
         let currentBufferM = 1000;
@@ -1104,13 +1467,13 @@
 
         function drawBuffer(radiusM) {
             currentBufferM = radiusM;
-            
+
             // Clear any existing buffer layer from the map cleanly
             if (bufferLayer) {
                 map.removeLayer(bufferLayer);
                 bufferLayer = null;
             }
-            
+
             // If centerline is loaded, compute buffer dynamically using Turf.js
             if (centerlineGeoJSON) {
                 try {
@@ -1123,7 +1486,7 @@
                 }
             } else {
                 // If centerline is not loaded yet, fetch and show the pre-rendered 1km buffer as a fallback
-                fetch('/data/legal_zones/river_buffer_1km.geojson?v=' + Date.now())
+                fetch(BASE_PATH + 'data/legal_zones/river_buffer_1km.geojson?v=' + Date.now())
                     .then(r => r.json())
                     .then(geo => {
                         // Double check that centerline wasn't loaded in the meantime to avoid race conditions!
@@ -1142,16 +1505,16 @@
             if (bufferKmLabel) bufferKmLabel.textContent = `${(radiusM / 1000).toFixed(1)} km`;
         }
 
-        fetch('/data/legal_zones/river_centerline.geojson?v=' + Date.now())
+        fetch(BASE_PATH + 'data/legal_zones/river_centerline.geojson?v=' + Date.now())
             .then(r => { if (!r.ok) throw new Error('Centerline unavailable'); return r.json(); })
             .then(gj => {
                 centerlineGeoJSON = gj;
-                
+
                 // Read the currently selected slider value to draw the buffer correctly
                 const slider = document.getElementById('buffer-slider');
                 const initialRadius = slider ? parseInt(slider.value) : 1000;
                 drawBuffer(initialRadius);
-                
+
                 const coords = gj.features[0].geometry.coordinates;
                 const lats = coords.map(c => c[1]);
                 const lons = coords.map(c => c[0]);
@@ -1176,7 +1539,7 @@
             L.DomEvent.disableScrollPropagation(hudDiv);
 
             function pushRadiusToServer(radius_m) {
-                fetch('/api/zone/radius', {
+                fetch(BASE_PATH + 'api/zone/radius', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ radius_m })
@@ -1209,7 +1572,7 @@
                 });
             });
 
-            fetch('/api/zone/radius')
+            fetch(BASE_PATH + 'api/zone/radius')
                 .then(r => r.json())
                 .then(res => {
                     const r = parseInt(res.radius_m);
@@ -1223,9 +1586,9 @@
                 .catch(() => { });
         })();
 
-        // ── WebSocket ───────────────────────────────────────────────────
+        //  WebSocket 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/ws`;
+        const wsUrl = `${protocol}//${window.location.host}${BASE_PATH}ws`;
         let ws;
 
         function connectWebSocket() {
@@ -1334,23 +1697,24 @@
                             <span style="font-size:10px; color:#6b7280;" class="mono">${det.lat.toFixed(5)}, ${det.lon.toFixed(5)}</span><br>
                             <a href="javascript:void(0)" onclick="window.open(gmapsNav(${det.lat},${det.lon}),'_blank')"
                                style="display:inline-block; margin-top:4px; padding:3px 8px; background:#047857; color:#fff; border-radius:4px; text-decoration:none; font-size:10px; font-weight:600; cursor:pointer;">
-                               🧭 Get Directions
+                                Get Directions
                             </a>
                         </div>
                     `);
             });
 
-            document.getElementById('visible-markers-count').textContent = visibleCount;
+            const vmc = document.getElementById('visible-markers-count');
+            if (vmc) vmc.textContent = visibleCount;
         }
 
-        // ── TAB 2: Audit data loader (throttled to max 1 call per 3s unless forced) ───
+        //  TAB 2: Audit data loader (throttled to max 1 call per 3s unless forced) 
         let _auditLastCall = 0;
         function loadAuditData(force = false) {
             const now = Date.now();
             if (!force && (now - _auditLastCall < 3000)) return;
             if (!force) _auditLastCall = now;
-            
-            fetch('/api/stats')
+
+            fetch(BASE_PATH + 'api/stats')
                 .then(res => res.json())
                 .then(stats => {
                     document.getElementById('stat-incidents').textContent = stats.total_incidents;
@@ -1364,7 +1728,7 @@
             const endVal = document.getElementById('filter-end').value;
             const sevVal = document.getElementById('filter-severity').value;
 
-            let url = '/api/incidents?';
+            let url = BASE_PATH + 'api/incidents?';
             const params = [];
             if (startVal) params.push(`start_date=${encodeURIComponent(startVal)}`);
             if (endVal) params.push(`end_date=${encodeURIComponent(endVal)}`);
@@ -1404,7 +1768,7 @@
                             </td>
                             <td style="text-align:center; display:flex; gap:4px; justify-content:center;">
                                 <button class="btn" style="font-size:10px; padding:4px 10px;">View</button>
-                                <a href="${navLink}" target="_blank" class="btn-nav" style="background:#047857; border-color:#059669;">🧭 Directions</a>
+                                <a href="${navLink}" target="_blank" class="btn-nav" style="background:#047857; border-color:#059669;"> Directions</a>
                             </td>
                         `;
                         tbody.appendChild(tr);
@@ -1435,20 +1799,20 @@
             const navContainer = document.getElementById('ev-nav-link');
             if (navContainer) {
                 const navLink = gmapsNav(inc.centroid_latitude, inc.centroid_longitude);
-                navContainer.innerHTML = `<a href="${navLink}" target="_blank" class="btn" style="width:100%; justify-content:center; padding:8px; text-decoration:none; background:#047857; border-color:#059669; color:#fff;">🧭 Get Driving Directions</a>`;
+                navContainer.innerHTML = `<a href="${navLink}" target="_blank" class="btn" style="width:100%; justify-content:center; padding:8px; text-decoration:none; background:#047857; border-color:#059669; color:#fff;"> Get Driving Directions</a>`;
             }
 
             const imgContainer = document.getElementById('ev-image-container');
             const imgEl = document.getElementById('ev-image');
-            
+
             // WHAT: Query the new PostgreSQL database binary endpoint!
             // WHY: Pulls the JPEG directly out of PostgreSQL without depending on VPS files!
-            imgEl.src = `/api/evidence/db/${inc.id}`;
+            imgEl.src = BASE_PATH + `api/evidence/db/${inc.id}`;
             imgEl.onerror = () => { imgContainer.classList.add('hidden'); };
             imgContainer.classList.remove('hidden');
 
 
-            fetch(`/api/detections?incident_id=${inc.id}`)
+            fetch(BASE_PATH + `api/detections?incident_id=${inc.id}`)
                 .then(res => res.json())
                 .then(detections => {
                     const listContainer = document.getElementById('ev-detections-list');
@@ -1494,7 +1858,7 @@
 
         document.getElementById('btn-export-pdf').addEventListener('click', () => {
             const link = document.createElement('a');
-            link.href = '/api/report/pdf';
+            link.href = BASE_PATH + 'api/report/pdf';
             link.download = 'sand_mining_report.pdf';
             document.body.appendChild(link);
             link.click();
@@ -1503,20 +1867,36 @@
 
         document.getElementById('btn-export-pdf-critical').addEventListener('click', () => {
             const link = document.createElement('a');
-            link.href = '/api/report/pdf?severity=EXTREME';
+            link.href = BASE_PATH + 'api/report/pdf?severity=EXTREME';
             link.download = 'sand_mining_report_extreme.pdf';
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
         });
 
-                    // ── FLIGHT COMMAND SYSTEM HANDLERS (MAP INTERACTION & UPDATE) ──
+        //  FLIGHT COMMAND SYSTEM HANDLERS (MAP INTERACTION & UPDATE) 
         (function setupFlightConfigHandlers() {
             const btnSave = document.getElementById('btn-save-flight-cfg');
             const modelSelect = document.getElementById('model-select');
             const latInput = document.getElementById('geofence-lat');
             const lonInput = document.getElementById('geofence-lon');
             const radiusSelect = document.getElementById('geofence-radius');
+
+            // Advanced settings collapsible toggle
+            const btnToggleAdvanced = document.getElementById('btn-toggle-advanced-hud');
+            const advancedSettingsDiv = document.getElementById('hud-advanced-settings');
+            if (btnToggleAdvanced && advancedSettingsDiv) {
+                btnToggleAdvanced.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (advancedSettingsDiv.style.display === 'none') {
+                        advancedSettingsDiv.style.display = 'block';
+                        btnToggleAdvanced.textContent = 'Hide Advanced Settings';
+                    } else {
+                        advancedSettingsDiv.style.display = 'none';
+                        btnToggleAdvanced.textContent = 'Show Advanced Settings';
+                    }
+                });
+            }
 
             let startGeofenceMarker = null;
             let startGeofenceCircle = null;
@@ -1542,11 +1922,11 @@
                     startGeofenceMarker = L.marker(latlng, {
                         draggable: true,
                         icon: L.divIcon({
-                            html: '🎯',
+                            html: '',
                             className: 'target-start-emoji',
                             iconSize: [24, 24]
                         })
-                    }).addTo(map).bindPopup("<b>🎯 Dynamic Geofence Center</b><br>Drag me to refine location!");
+                    }).addTo(map).bindPopup("<b> Dynamic Geofence Center</b><br>Drag me to refine location!");
 
                     // Draw the green geofenced active boundary circle
                     startGeofenceCircle = L.circle(latlng, {
@@ -1558,13 +1938,13 @@
                     }).addTo(map);
 
                     // Listen for DRAG events on the target marker pin
-                    startGeofenceMarker.on('drag', function(e) {
+                    startGeofenceMarker.on('drag', function (e) {
                         const position = startGeofenceMarker.getLatLng();
-                        
+
                         // Dynamically update text inputs as the user drags
                         latInput.value = position.lat.toFixed(5);
                         lonInput.value = position.lng.toFixed(5);
-                        
+
                         // Move the circle boundary along with the marker
                         startGeofenceCircle.setLatLng(position);
                     });
@@ -1576,21 +1956,27 @@
             }
 
             // Load initial flight parameters from server database on startup
-            fetch('/api/flight/config')
+            fetch(BASE_PATH + 'api/flight/config')
                 .then(r => r.json())
                 .then(cfg => {
                     modelSelect.value = cfg.active_model;
                     radiusSelect.value = cfg.start_radius_meters;
                     
+                    const sourceInput = document.getElementById('stream-source-input');
+                    if (sourceInput) {
+                        const val = cfg.video_source || '';
+                        sourceInput.value = (val === 'dummy') ? '' : val;
+                    }
+
                     if (cfg.start_lat !== 0.0 && cfg.start_lng !== 0.0) {
                         const savedLatLng = L.latLng(cfg.start_lat, cfg.start_lng);
                         updateGeofenceVisuals(savedLatLng);
                     }
-                }).catch(() => {});
+                }).catch(() => { });
 
             // WHAT: Leaflet standard Single-Click listener
             // WHY: Single clicking anywhere on the map instantly re-centers the geofence starting boundary!
-            map.on('click', function(e) {
+            map.on('click', function (e) {
                 // Ignore clicks if clicking on a marker/popup or HUD panel itself
                 if (e.originalEvent.target.closest('.map-hud, .leaflet-marker-icon')) {
                     return;
@@ -1600,7 +1986,7 @@
 
             // WHAT: Select dropdown event listener
             // WHY: Dynamically updates the geofence boundary circle radius on the fly!
-            radiusSelect.addEventListener('change', function() {
+            radiusSelect.addEventListener('change', function () {
                 if (startGeofenceCircle) {
                     const radius = parseFloat(radiusSelect.value);
                     startGeofenceCircle.setRadius(radius);
@@ -1609,34 +1995,240 @@
 
 
             // Post updated settings to VPS
-            btnSave.addEventListener('click', function(e) {
+            btnSave.addEventListener('click', function (e) {
                 e.stopPropagation();
-                
+
+                const sourceInput = document.getElementById('stream-source-input');
                 const payload = {
                     active_model: modelSelect.value,
                     start_lat: parseFloat(latInput.value),
                     start_lng: parseFloat(lonInput.value),
                     start_radius_meters: parseFloat(radiusSelect.value),
+                    video_source: (sourceInput && sourceInput.value.trim()) ? sourceInput.value.trim() : "dummy",
                     detection_enabled: true
                 };
 
-                fetch('/api/flight/config', {
+                fetch(BASE_PATH + 'api/flight/config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 })
-                .then(r => r.json())
-                .then(res => {
-                    alert(`🛰️ Flight Configuration Updated!\nActive Model: ${res.config.active_model}\nGeofenced Start Coordinates: ${res.config.start_lat}, ${res.config.start_lng}`);
-                })
-                .catch(err => {
-                    console.error('Failed to sync flight configuration:', err);
-                    alert('❌ Failed to update flight parameters.');
-                });
+                    .then(r => r.json())
+                    .then(res => {
+                        alert(` Flight Configuration Updated!\nActive Model: ${res.config.active_model}\nGeofenced Start Coordinates: ${res.config.start_lat}, ${res.config.start_lng}\nStream Source: ${res.config.video_source || 'default'}`);
+                    })
+                    .catch(err => {
+                        console.error('Failed to sync flight configuration:', err);
+                        alert(' Failed to update flight parameters.');
+                    });
             });
         })();
 
+        // Operator Authentication & Status Check
+        let currentUser = null;
+
+        function checkAuthStatus() {
+            fetch(BASE_PATH + 'api/auth/status')
+                .then(res => {
+                    if (!res.ok) {
+                        window.location.href = BASE_PATH + 'login';
+                        throw new Error('Not authenticated');
+                    }
+                    return res.json();
+                })
+                .then(user => {
+                    currentUser = user;
+                    const userDisplay = document.getElementById('user-display');
+                    if (userDisplay) {
+                        userDisplay.textContent = user.username;
+                    }
+                    // Role-based privilege gating: only 'admin' can see recordings
+                    if (user.role === 'admin') {
+                        const adminSec = document.getElementById('admin-record-section');
+                        if (adminSec) adminSec.style.display = 'block';
+                        const tabGalleryBtn = document.getElementById('btn-tab-gallery');
+                        if (tabGalleryBtn) tabGalleryBtn.style.display = 'inline-block';
+                    }
+                })
+                .catch(err => {
+                    console.error('Auth verification check failed:', err);
+                });
+        }
+
+        // Logout
+        const btnLogout = document.getElementById('btn-logout');
+        if (btnLogout) {
+            btnLogout.addEventListener('click', () => {
+                fetch(BASE_PATH + 'api/auth/logout', { method: 'POST' })
+                    .then(() => {
+                        window.location.href = BASE_PATH + 'login';
+                    })
+                    .catch(err => console.error('Logout failed:', err));
+            });
+        }
+
+        // Flight Recording UI Controls
+        const btnStartRecord = document.getElementById('btn-start-record');
+        const btnStopRecord = document.getElementById('btn-stop-record');
+        const recPulseDot = document.getElementById('rec-pulse-dot');
+        const recordingStatusText = document.getElementById('recording-status-text');
+        let recordTimer = null;
+        let recordStartTime = null;
+
+        function updateRecordTimer() {
+            if (!recordStartTime) return;
+            const elapsed = Math.round((Date.now() - recordStartTime) / 1000);
+            recordingStatusText.textContent = `REC: ${elapsed}s active`;
+        }
+
+        if (btnStartRecord) {
+            btnStartRecord.addEventListener('click', () => {
+                fetch(BASE_PATH + 'api/admin/record/start', { method: 'POST' })
+                    .then(res => {
+                        if (!res.ok) throw new Error('Failed to start recording');
+                        return res.json();
+                    })
+                    .then(data => {
+                        btnStartRecord.disabled = true;
+                        btnStartRecord.style.background = 'rgba(55, 65, 81, 0.5)';
+                        btnStartRecord.style.borderColor = 'rgba(75, 85, 99, 0.3)';
+                        btnStartRecord.style.color = '#9ca3af';
+                        btnStartRecord.style.cursor = 'not-allowed';
+
+                        btnStopRecord.disabled = false;
+                        btnStopRecord.style.background = 'rgba(239, 68, 68, 0.15)';
+                        btnStopRecord.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+                        btnStopRecord.style.color = '#f87171';
+                        btnStopRecord.style.cursor = 'pointer';
+
+                        recPulseDot.style.display = 'inline-block';
+                        recordStartTime = Date.now();
+                        recordingStatusText.textContent = 'REC: 0s active';
+                        recordingStatusText.style.color = '#f87171';
+
+                        if (recordTimer) clearInterval(recordTimer);
+                        recordTimer = setInterval(updateRecordTimer, 1000);
+                    })
+                    .catch(err => {
+                        alert(' Error: ' + err.message);
+                    });
+            });
+        }
+
+        if (btnStopRecord) {
+            btnStopRecord.addEventListener('click', () => {
+                fetch(BASE_PATH + 'api/admin/record/stop', { method: 'POST' })
+                    .then(res => {
+                        if (!res.ok) throw new Error('Failed to stop recording');
+                        return res.json();
+                    })
+                    .then(data => {
+                        btnStartRecord.disabled = false;
+                        btnStartRecord.style.background = 'rgba(239, 68, 68, 0.15)';
+                        btnStartRecord.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+                        btnStartRecord.style.color = '#f87171';
+                        btnStartRecord.style.cursor = 'pointer';
+
+                        btnStopRecord.disabled = true;
+                        btnStopRecord.style.background = 'rgba(55, 65, 81, 0.5)';
+                        btnStopRecord.style.borderColor = 'rgba(75, 85, 99, 0.3)';
+                        btnStopRecord.style.color = '#9ca3af';
+                        btnStopRecord.style.cursor = 'not-allowed';
+
+                        recPulseDot.style.display = 'none';
+                        if (recordTimer) clearInterval(recordTimer);
+                        recordTimer = null;
+                        recordStartTime = null;
+
+                        const mb = (data.size_bytes / (1024 * 1024)).toFixed(2);
+                        recordingStatusText.textContent = `Saved: ${data.duration_seconds}s (${mb} MB)`;
+                        recordingStatusText.style.color = '#34d399';
+
+                        // If we are currently on the gallery tab, refresh the table automatically!
+                        if (btnTabGallery.classList.contains('active')) {
+                            loadGalleryData();
+                        }
+                    })
+                    .catch(err => {
+                        alert(' Error: ' + err.message);
+                    });
+            });
+        }
+
+        // Flight Records & Media Playback Gallery
+        function loadGalleryData() {
+            const body = document.getElementById('gallery-list-body');
+            body.innerHTML = '<tr><td colspan="5" style="padding:30px; text-align:center; color:#6b7280;">Loading archives...</td></tr>';
+
+            fetch(BASE_PATH + 'api/admin/recordings')
+                .then(res => {
+                    if (!res.ok) throw new Error('Failed to fetch recordings');
+                    return res.json();
+                })
+                .then(recordings => {
+                    body.innerHTML = '';
+                    if (recordings.length === 0) {
+                        body.innerHTML = '<tr><td colspan="5" style="padding:30px; text-align:center; color:#6b7280;">No flight recordings found. Start a mission and toggle REC to capture feeds.</td></tr>';
+                        return;
+                    }
+
+                    recordings.forEach(rec => {
+                        const tr = document.createElement('tr');
+                        const localTime = new Date(rec.timestamp).toLocaleString();
+                        const mb = (rec.size_bytes / (1024 * 1024)).toFixed(2);
+
+                        tr.innerHTML = `
+                            <td>${rec.id}</td>
+                            <td>${localTime}</td>
+                            <td>${rec.duration_seconds}s</td>
+                            <td>${mb} MB</td>
+                            <td style="text-align:right;">
+                                <button class="btn btn-primary btn-play-rec" data-filepath="${rec.filepath}" data-duration="${rec.duration_seconds}" data-size="${mb}" style="padding:4px 8px; font-size:10px; margin:0;">Play Feeds</button>
+                            </td>
+                        `;
+
+                        tr.querySelector('.btn-play-rec').addEventListener('click', (e) => {
+                            const btn = e.target;
+                            const path = btn.getAttribute('data-filepath');
+                            const size = btn.getAttribute('data-size');
+                            const dur = btn.getAttribute('data-duration');
+                            playVideo(path, size, dur);
+                        });
+
+                        body.appendChild(tr);
+                    });
+                })
+                .catch(err => {
+                    body.innerHTML = `<tr><td colspan="5" style="padding:30px; text-align:center; color:#ef4444;">Failed to load logs: ${err.message}</td></tr>`;
+                });
+        }
+
+        function playVideo(filepath, sizeMB, durationSec) {
+            document.getElementById('player-empty').classList.add('hidden');
+            document.getElementById('player-active').classList.remove('hidden');
+            document.getElementById('player-actions').classList.remove('hidden');
+
+            document.getElementById('player-filepath').textContent = filepath;
+            document.getElementById('player-filesize').textContent = `${sizeMB} MB`;
+            document.getElementById('player-duration').textContent = `${durationSec} seconds`;
+
+            const videoUrl = BASE_PATH + filepath;
+            document.getElementById('lnk-download-video').href = videoUrl;
+            document.getElementById('lnk-external-video').href = videoUrl;
+
+            const player = document.getElementById('gallery-video-player');
+            player.src = videoUrl;
+            player.load();
+            player.play().catch(e => console.log('Autoplay blocked:', e));
+        }
+
+        const btnRefreshGallery = document.getElementById('btn-refresh-gallery');
+        if (btnRefreshGallery) {
+            btnRefreshGallery.addEventListener('click', () => loadGalleryData());
+        }
+
         // Initialize
+        checkAuthStatus();
         connectWebSocket();
     </script>
 </body>

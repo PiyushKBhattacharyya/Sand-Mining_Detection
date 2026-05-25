@@ -19,3 +19,6 @@ scratch/
 .gemini/
  
 *.MP4
+
+# Sensitive env variables
+.env

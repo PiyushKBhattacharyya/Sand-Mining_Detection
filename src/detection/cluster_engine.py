@@ -10,7 +10,9 @@ import sys
 
 # Add preprocess directory to import db_setup
 sys.path.append(str(Path(__file__).resolve().parent.parent / "preprocess"))
+# pyrefly: ignore [missing-import]
 from db_setup import DatabaseManager
+# pyrefly: ignore [missing-import]
 from zone_builder import build_buffer
 
 # Configure logging
@@ -22,7 +24,7 @@ class ClusterEngine:
     Groups spatial detections into clusters using DBSCAN,
     calculates cluster severities, and verifies violations against the 500m legal buffer.
     """
-    def __init__(self, db_manager: DatabaseManager, buffer_path: str = None):
+    def __init__(self, db_manager, buffer_path = None):
         self.db_manager = db_manager
         self.project_root = Path(__file__).resolve().parent.parent.parent
         self.buffer_path = buffer_path or (
@@ -48,7 +50,7 @@ class ClusterEngine:
         except Exception as e:
             logger.error(f"Error loading buffer zone geometry: {e}")
 
-    def set_radius(self, radius_m: float):
+    def set_radius(self, radius_m):
         """
         Hot-reload the enforcement zone with a new radius (metres).
         Called when the operator changes the slider on the dashboard.
@@ -61,9 +63,9 @@ class ClusterEngine:
             self._load_buffer_zone()   # reload Shapely geometry from updated file
             logger.info(f"Zone enforcement updated to {radius_m:.0f}m")
         else:
-            logger.warning("Buffer rebuild failed — keeping previous zone geometry")
+            logger.warning("Buffer rebuild failed  keeping previous zone geometry")
 
-    def is_in_illegal_zone(self, lat: float, lon: float) -> bool:
+    def is_in_illegal_zone(self, lat, lon):
         """Returns True if the coordinate is inside the 500m buffer zone."""
         if self.illegal_zone_gdf is None:
             return True # Fallback to warning if no file exists
@@ -73,7 +75,7 @@ class ClusterEngine:
         contains = self.illegal_zone_gdf.geometry.contains(point).any()
         return bool(contains)
 
-    def calculate_severity(self, detections: List[Dict[str, Any]]) -> str:
+    def calculate_severity(self, detections):
         """
         Calculates cluster severity based on constituent detections:
         - EXTREME: All 3 classes present (JCB + Truck + Workers).
@@ -98,7 +100,7 @@ class ClusterEngine:
         else:
             return "LOW"
 
-    def cluster_detections(self, detections: List[Dict[str, Any]], eps_meters: float = 50.0, min_samples: int = 1) -> List[Dict[str, Any]]:
+    def cluster_detections(self, detections, eps_meters = 50.0, min_samples = 1):
         """
         Clusters active detections using DBSCAN.
         Assigns cluster IDs and calculates incident details.
@@ -156,7 +158,7 @@ class ClusterEngine:
             
         return incidents
 
-    def save_incidents_to_db(self, incidents: List[Dict[str, Any]], telemetry_log_id: int = None) -> Tuple[int, int]:
+    def save_incidents_to_db(self, incidents, telemetry_log_id = None):
         """
         Saves the incidents and updates detections with foreign key references in the database.
         Allows exact historical tracking and multi-tier filtering.
