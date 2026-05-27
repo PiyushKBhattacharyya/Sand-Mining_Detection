@@ -4,6 +4,7 @@ venv/
 
 # Detection output data
 data/detections/
+data/processed/
 
 # Python cache files
 __pycache__/
