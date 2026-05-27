@@ -136,6 +136,42 @@ def notify_overlay_frame():
     if main_loop and overlay_frame_event:
         main_loop.call_soon_threadsafe(overlay_frame_event.set)
 
+class FreshFrameGrabber:
+    """
+    A lightweight, dedicated thread that continuously drains OpenCV's internal
+    FFMPEG buffer queue for live RTMP/RTSP streams, ensuring we always serve
+    the absolute freshest real-time frame with zero latency.
+    """
+    def __init__(self, cap):
+        self.cap = cap
+        self.latest_frame = None
+        self.ret = False
+        self.running = True
+        self.lock = threading.Lock()
+        self.thread = threading.Thread(target=self._grab_loop, daemon=True, name="rtmp-grabber")
+        self.thread.start()
+
+    def _grab_loop(self):
+        while self.running:
+            ret, frame = self.cap.read()
+            if not ret:
+                time.sleep(0.01)
+                continue
+            with self.lock:
+                self.latest_frame = frame
+                self.ret = ret
+
+    def read(self):
+        with self.lock:
+            return self.ret, self.latest_frame
+
+    def release(self):
+        self.running = False
+        try:
+            self.cap.release()
+        except Exception:
+            pass
+
 def _video_capture_loop():
     """
     Background daemon thread: opens the configured video source and continuously
@@ -151,6 +187,7 @@ def _video_capture_loop():
         return
 
     cap = None
+    grabber = None
     use_synthetic_video = True
     current_source = None
     is_rtsp = False
@@ -185,7 +222,14 @@ def _video_capture_loop():
 
         if current_source != target_source:
             logger.info(" Swapping live video capture source: {} -> {}".format(current_source, target_source))
-            if cap is not None:
+            if grabber is not None:
+                try:
+                    grabber.release()
+                except Exception as ex_rel:
+                    logger.debug("Error releasing previous FreshFrameGrabber: {}".format(ex_rel))
+                cap = None
+                grabber = None
+            elif cap is not None:
                 try:
                     cap.release()
                 except Exception as ex_rel:
@@ -217,6 +261,7 @@ def _video_capture_loop():
                         if cap is not None and cap.isOpened():
                             # Set internal buffer size to 1 to prevent frame queuing lag
                             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                            grabber = FreshFrameGrabber(cap)
                     elif is_file:
                         logger.info("  Opening dynamic video file: {}...".format(target_source))
                         cap = cv2.VideoCapture(target_source)
@@ -283,7 +328,11 @@ def _video_capture_loop():
 
             ret = True
         else:
-            ret, frame = cap.read()
+            if grabber is not None:
+                ret, frame = grabber.read()
+            else:
+                ret, frame = cap.read()
+                
             if not ret and is_file:
                 # Rewind local video file to loop infinitely!
                 logger.info("Video file ended. Rewinding back to start...")
@@ -295,12 +344,18 @@ def _video_capture_loop():
                 consecutive_drops += 1
                 if consecutive_drops > 25:
                     logger.warning("  RTMP/RTSP stream disconnected. Resetting stream client for automatic reconnection...")
-                    if cap is not None:
+                    if grabber is not None:
+                        try:
+                            grabber.release()
+                        except Exception:
+                            pass
+                    elif cap is not None:
                         try:
                             cap.release()
                         except Exception:
                             pass
                     cap = None
+                    grabber = None
                     current_source = None
                     consecutive_drops = 0
                     time.sleep(2.0)
