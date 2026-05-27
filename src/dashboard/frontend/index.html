@@ -730,10 +730,39 @@
                             <span class="feed-label">Drone Camera</span>
                             <span class="feed-badge feed-badge-rec"> LIVE</span>
                             <div
-                                style="flex:1; background:#111827; display:flex; align-items:center; justify-content:center; position:relative;">
+                                style="flex:1; background:#111827; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden;">
                                 <img id="img-stream-raw" src="" alt="Raw Drone Feed"
                                     style="width:100%; height:100%; object-fit:cover; aspect-ratio:16/9;" />
 
+                                <!-- Beautiful HTML Glassmorphic Standby Overlay -->
+                                <div id="standby-overlay" style="display:none; position:absolute; inset:0; background:rgba(8, 12, 24, 0.95); z-index:10; flex-direction:column; align-items:center; justify-content:center; padding:16px; text-align:center;">
+                                    <div style="background:rgba(249, 115, 22, 0.08); border:1px solid rgba(249, 115, 22, 0.25); border-radius:12px; padding:18px; max-width:440px; box-shadow:0 10px 25px -5px rgba(0,0,0,0.5);">
+                                        <div style="display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:8px;">
+                                            <span style="display:inline-block; width:8px; height:8px; background:#f97316; border-radius:50%; box-shadow:0 0 10px #f97316; animation:pulse 1.5s infinite;"></span>
+                                            <span style="color:#fdba74; font-weight:700; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; font-family:'Inter',sans-serif;">Drone Feed Standby</span>
+                                        </div>
+                                        <h3 style="color:#ffffff; font-size:17px; font-weight:600; margin-bottom:6px; margin-top:0; font-family:'Outfit','Inter',sans-serif;">Waiting for Video Connection</h3>
+                                        <p style="color:#9ca3af; font-size:12px; line-height:1.45; margin-bottom:14px; font-family:'Inter',sans-serif;">The live drone camera stream is currently offline.</p>
+                                        
+                                        <!-- Ingest URL display with interactive copy button -->
+                                        <div style="background:#1e293b; border-radius:8px; padding:10px; text-align:left; border:1px solid #334155; margin-bottom:14px;">
+                                            <span style="color:#64748b; font-size:10px; font-weight:600; text-transform:uppercase; display:block; margin-bottom:4px; font-family:'Inter',sans-serif; letter-spacing:0.02em;">RTMP Ingest Destination URL</span>
+                                            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                                                <code id="rtmp-ingest-url" style="color:#38bdf8; font-family:monospace; font-size:11px; word-break:break-all; flex:1;">rtmp://187.127.142.58:1935/live/drone</code>
+                                                <button onclick="window.copyIngestUrl(this)" style="background:#0284c7; border:none; color:white; border-radius:4px; padding:3px 8px; font-size:10px; cursor:pointer; font-weight:600; transition:all 0.2s; font-family:'Inter',sans-serif;">Copy</button>
+                                            </div>
+                                        </div>
+
+                                        <div style="text-align:left; color:#9ca3af; font-size:11.5px; line-height:1.45; font-family:'Inter',sans-serif;">
+                                            <strong style="color:#e2e8f0; display:block; margin-bottom:4px;">How to start streaming:</strong>
+                                            <ol style="margin:0; padding-left:14px; display:flex; flex-direction:column; gap:4px;">
+                                                <li>Ensure the DJI Drone and Controller are Powered ON</li>
+                                                <li>Go to DJI Pilot App Settings -> Live Stream</li>
+                                                <li>Choose RTMP and paste the destination URL above</li>
+                                            </ol>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -742,9 +771,21 @@
                             <span class="feed-label">AI Detection Feed</span>
                             <span class="feed-badge feed-badge-ai"> DETECTING</span>
                             <div
-                                style="flex:1; background:#111827; display:flex; align-items:center; justify-content:center;">
+                                style="flex:1; background:#111827; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden;">
                                 <img id="img-stream-overlay" src="" alt="AI Detection Feed"
                                     style="width:100%; height:100%; object-fit:cover; aspect-ratio:16/9;" />
+
+                                <!-- Sleek AI Engine Standby Overlay -->
+                                <div id="standby-overlay-ai" style="display:none; position:absolute; inset:0; background:rgba(8, 12, 24, 0.95); z-index:10; flex-direction:column; align-items:center; justify-content:center; padding:16px; text-align:center;">
+                                    <div style="background:rgba(148, 163, 184, 0.05); border:1px solid rgba(148, 163, 184, 0.15); border-radius:12px; padding:18px; max-width:360px;">
+                                        <div style="display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:6px;">
+                                            <span style="display:inline-block; width:6px; height:6px; background:#64748b; border-radius:50%;"></span>
+                                            <span style="color:#94a3b8; font-weight:700; font-size:11px; letter-spacing:0.06em; text-transform:uppercase; font-family:'Inter',sans-serif;">AI Engine Standby</span>
+                                        </div>
+                                        <h3 style="color:#e2e8f0; font-size:15px; font-weight:600; margin-bottom:6px; font-family:'Outfit','Inter',sans-serif;">Waiting for Live Video</h3>
+                                        <p style="color:#64748b; font-size:11.5px; line-height:1.4; margin:0; font-family:'Inter',sans-serif;">Once the drone stream starts, the YOLO detection engine will automatically run object recognition overlays here.</p>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -1502,6 +1543,24 @@
                         slider.value = r;
                         drawBuffer(r);
                     }
+                } else if (data.type === 'stream_status') {
+                    const isSynthetic = data.payload.use_synthetic_video;
+                    const rtmpUrl = data.payload.video_source;
+                    
+                    const ingestCode = document.getElementById('rtmp-ingest-url');
+                    if (ingestCode && rtmpUrl) {
+                        ingestCode.textContent = rtmpUrl;
+                    }
+                    
+                    const overlayRaw = document.getElementById('standby-overlay');
+                    const overlayAI = document.getElementById('standby-overlay-ai');
+                    if (isSynthetic) {
+                        if (overlayRaw && overlayRaw.style.display !== 'flex') overlayRaw.style.display = 'flex';
+                        if (overlayAI && overlayAI.style.display !== 'flex') overlayAI.style.display = 'flex';
+                    } else {
+                        if (overlayRaw && overlayRaw.style.display !== 'none') overlayRaw.style.display = 'none';
+                        if (overlayAI && overlayAI.style.display !== 'none') overlayAI.style.display = 'none';
+                    }
                 }
             };
 
@@ -1512,6 +1571,24 @@
                 setTimeout(connectWebSocket, 3000);
             };
         }
+
+        // Global clipboard utility for streaming checklist
+        window.copyIngestUrl = function(button) {
+            const codeEl = document.getElementById('rtmp-ingest-url');
+            if (!codeEl) return;
+            
+            navigator.clipboard.writeText(codeEl.textContent).then(() => {
+                const originalText = button.textContent;
+                button.textContent = 'Copied!';
+                button.style.background = '#22c55e';
+                setTimeout(() => {
+                    button.textContent = originalText;
+                    button.style.background = '#0284c7';
+                }, 1500);
+            }).catch(err => {
+                console.error('Failed to copy ingest URL: ', err);
+            });
+        };
 
         // Telemetry handler
         function handleTelemetryUpdate(tele) {
@@ -2109,7 +2186,7 @@
                         recordTimer = setInterval(updateRecordTimer, 1000);
                     })
                     .catch(err => {
-                        alert('⚠️ Error: ' + err.message);
+                        alert('Error: ' + err.message);
                     });
             });
         }

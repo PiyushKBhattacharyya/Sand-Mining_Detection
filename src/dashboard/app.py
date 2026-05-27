@@ -311,35 +311,14 @@ def _video_capture_loop():
                 cv2.line(frame, (0, y), (1280, y), (32, 24, 18), 1)
                 
             # Draw central tactical HUD green crosshair (slightly darker to not clash with warning box)
-            cv2.line(frame, (640 - 20, 360), (640 + 20, 360), (0, 100, 0), 1)
-            cv2.line(frame, (640, 360 - 20), (640, 360 + 20), (0, 100, 0), 1)
+            cv2.line(frame, (640 - 20, 360), (640 + 20, 360), (0, 160, 0), 1)
+            cv2.line(frame, (640, 360 - 20), (640, 360 + 20), (0, 160, 0), 1)
             
-            # Print status message
+            # Print subtle status coordinate indicators
             drone_lat = latest_drone_coords.get("lat", 0.0)
             drone_lon = latest_drone_coords.get("lon", 0.0)
-            cv2.putText(frame, "LAT: {:.6f}".format(drone_lat), (40, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
-            cv2.putText(frame, "LON: {:.6f}".format(drone_lon), (40, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
-            
-            # Draw a highly visible, centered standby box to prevent object-fit cropping
-            box_x1, box_y1 = 320, 210
-            box_x2, box_y2 = 960, 510
-            # Semi-transparent dark alert panel
-            cv2.rectangle(frame, (box_x1, box_y1), (box_x2, box_y2), (10, 10, 35), -1)
-            # Amber/Orange warning border
-            cv2.rectangle(frame, (box_x1, box_y1), (box_x2, box_y2), (0, 140, 255), 2)
-            
-            # User-friendly warning title
-            cv2.putText(frame, "[ OFFLINE ] DRONE FEED STANDBY", (box_x1 + 40, box_y1 + 50), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 140, 255), 2)
-            cv2.putText(frame, "The live camera feed is not currently connected.", (box_x1 + 40, box_y1 + 95), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (220, 220, 220), 1)
-            
-            # Clear diagnostic checklist instructions
-            cv2.putText(frame, "Please complete the following steps to stream:", (box_x1 + 40, box_y1 + 140), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (160, 160, 160), 1)
-            cv2.putText(frame, "1. Turn ON the drone and the remote controller.", (box_x1 + 40, box_y1 + 185), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (200, 200, 200), 1)
-            cv2.putText(frame, "2. Go to DJI pilot app -> Settings -> Live Stream.", (box_x1 + 40, box_y1 + 225), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (200, 200, 200), 1)
-            
-            # Destination Ingest URL
-            stream_target = flight_config.get("video_source", "rtmp://187.127.142.58:1935/live/drone")
-            cv2.putText(frame, "3. Set RTMP URL to: {}".format(stream_target), (box_x1 + 40, box_y1 + 265), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (100, 255, 100), 1)
+            cv2.putText(frame, "LAT: {:.6f}".format(drone_lat), (40, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (100, 150, 100), 1)
+            cv2.putText(frame, "LON: {:.6f}".format(drone_lon), (40, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (100, 150, 100), 1)
             
             # Add dynamic scan line sweep animation
             scan_y = int((time.time() * 200) % 720)
@@ -716,7 +695,7 @@ async def _telemetry_fallback_broadcast_loop():
     WHY: Allows operators using standard DJI Pilot/Fly apps (without custom API relay subs)
     to set the drone location by double-clicking on the map!
     """
-    global latest_drone_coords, flight_config, manager
+    global latest_drone_coords, flight_config, manager, use_synthetic_video
     await asyncio.sleep(4.0)  # Wait for startup and uvicorn bind
     
     # We initialize the server-side cluster engine here as well to ensure
@@ -757,6 +736,15 @@ async def _telemetry_fallback_broadcast_loop():
                     }
                 }
                 await manager.broadcast(tele_payload)
+            
+            # Periodically broadcast stream standby status to the frontend!
+            await manager.broadcast({
+                "type": "stream_status",
+                "payload": {
+                    "use_synthetic_video": use_synthetic_video,
+                    "video_source": str(flight_config.get("video_source", "rtmp://187.127.142.58:1935/live/drone"))
+                }
+            })
         except Exception as e:
             logger.debug(f"Telemetry fallback loop: {e}")
         await asyncio.sleep(1.0)
