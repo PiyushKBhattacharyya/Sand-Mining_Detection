@@ -178,7 +178,7 @@ def _video_capture_loop():
     pushes raw BGR frames to latest_bgr_frame, and raw JPEG frames into latest_raw_frame.
     It does NOT run YOLO inference, keeping frame acquisition extremely fast (30 FPS).
     """
-    global latest_raw_frame, latest_overlay_frame, latest_webcam_detections, local_webcam_mode, last_webcam_frame_time, latest_bgr_frame
+    global latest_raw_frame, latest_overlay_frame, latest_webcam_detections, local_webcam_mode, last_webcam_frame_time, latest_bgr_frame, use_synthetic_video
 
     try:
         import cv2
@@ -188,7 +188,6 @@ def _video_capture_loop():
 
     cap = None
     grabber = None
-    use_synthetic_video = True
     current_source = None
     is_rtsp = False
     is_file = False
@@ -311,16 +310,32 @@ def _video_capture_loop():
             for y in range(0, 720, 80):
                 cv2.line(frame, (0, y), (1280, y), (32, 24, 18), 1)
                 
-            # Draw central tactical HUD green crosshair
-            cv2.line(frame, (640 - 20, 360), (640 + 20, 360), (0, 255, 0), 1)
-            cv2.line(frame, (640, 360 - 20), (640, 360 + 20), (0, 255, 0), 1)
+            # Draw central tactical HUD green crosshair (slightly darker to not clash with warning box)
+            cv2.line(frame, (640 - 20, 360), (640 + 20, 360), (0, 100, 0), 1)
+            cv2.line(frame, (640, 360 - 20), (640, 360 + 20), (0, 100, 0), 1)
             
             # Print status message
             drone_lat = latest_drone_coords.get("lat", 0.0)
             drone_lon = latest_drone_coords.get("lon", 0.0)
-            cv2.putText(frame, "TACTICAL RAW STREAM (SIMULATED)", (40, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-            cv2.putText(frame, "LAT: {:.6f}".format(drone_lat), (40, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
-            cv2.putText(frame, "LON: {:.6f}".format(drone_lon), (40, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+            cv2.putText(frame, "LAT: {:.6f}".format(drone_lat), (40, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+            cv2.putText(frame, "LON: {:.6f}".format(drone_lon), (40, 95), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+            
+            # Draw a highly prominent warning box at the center-bottom of the frame
+            # to explain exactly why there is no video feed!
+            box_x1, box_y1 = 340, 480
+            box_x2, box_y2 = 940, 640
+            # Semi-transparent dark background for the alert panel
+            cv2.rectangle(frame, (box_x1, box_y1), (box_x2, box_y2), (10, 10, 35), -1)
+            # Amber/Orange warning border
+            cv2.rectangle(frame, (box_x1, box_y1), (box_x2, box_y2), (0, 120, 255), 2)
+            
+            # Alert Text
+            cv2.putText(frame, "NO LIVE VIDEO STREAM DETECTED", (box_x1 + 30, box_y1 + 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 120, 255), 2)
+            cv2.putText(frame, "Status: Standby (Waiting for drone RTMP stream)", (box_x1 + 30, box_y1 + 80), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+            
+            # Display target ingest URL dynamically so operator knows how to stream
+            stream_target = flight_config.get("video_source", "rtmp://187.127.142.58:1935/live/drone")
+            cv2.putText(frame, "Destination: {}".format(stream_target), (box_x1 + 30, box_y1 + 115), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (100, 200, 100), 1)
             
             # Add dynamic scan line sweep animation
             scan_y = int((time.time() * 200) % 720)
@@ -680,6 +695,7 @@ manager = ConnectionManager()
 latest_raw_frame = b""
 latest_overlay_frame = b""
 latest_webcam_detections = []
+use_synthetic_video = True
 
 # Holds the loaded YOLO model  set once at startup, used in _video_capture_loop
 _yolo_model = None
@@ -2044,9 +2060,15 @@ async def start_recording(request: Request):
     if not user or user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Forbidden: Admin privilege required.")
         
-    global is_recording, recording_writer, recording_start_time, recording_filepath, recording_filename, recording_lock
+    global is_recording, recording_writer, recording_start_time, recording_filepath, recording_filename, recording_lock, use_synthetic_video
     import cv2
     with recording_lock:
+        if use_synthetic_video:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot start recording: No active drone camera feed is connected (currently in standby)."
+            )
+            
         if is_recording:
             return {"status": "already_recording", "filename": recording_filename}
             

@@ -2080,8 +2080,11 @@
         if (btnStartRecord) {
             btnStartRecord.addEventListener('click', () => {
                 fetch(BASE_PATH + 'api/admin/record/start', { method: 'POST' })
-                    .then(res => {
-                        if (!res.ok) throw new Error('Failed to start recording');
+                    .then(async res => {
+                        if (!res.ok) {
+                            const errData = await res.json().catch(() => ({}));
+                            throw new Error(errData.detail || 'Failed to start recording');
+                        }
                         return res.json();
                     })
                     .then(data => {
@@ -2106,7 +2109,7 @@
                         recordTimer = setInterval(updateRecordTimer, 1000);
                     })
                     .catch(err => {
-                        alert(' Error: ' + err.message);
+                        alert('⚠️ Error: ' + err.message);
                     });
             });
         }
@@ -2114,8 +2117,11 @@
         if (btnStopRecord) {
             btnStopRecord.addEventListener('click', () => {
                 fetch(BASE_PATH + 'api/admin/record/stop', { method: 'POST' })
-                    .then(res => {
-                        if (!res.ok) throw new Error('Failed to stop recording');
+                    .then(async res => {
+                        if (!res.ok) {
+                            const errData = await res.json().catch(() => ({}));
+                            throw new Error(errData.detail || 'Failed to stop recording');
+                        }
                         return res.json();
                     })
                     .then(data => {
