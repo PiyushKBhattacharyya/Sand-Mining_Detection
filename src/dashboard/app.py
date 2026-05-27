@@ -2093,6 +2093,32 @@ async def stop_recording(request: Request):
         recording_writer = None
         
         duration = round(time.time() - recording_start_time, 1)
+        
+        # Transcode raw mp4v video to standard H.264 (libx264) using FFmpeg
+        # so that it is natively playable inside HTML5 <video> tags in all modern web browsers.
+        if recording_filepath.exists():
+            try:
+                import subprocess
+                temp_filepath = recording_filepath.parent / "temp_{}".format(recording_filename)
+                logger.info("Transcoding raw recorded video to browser-compatible H.264...")
+                cmd = [
+                    "ffmpeg", "-y",
+                    "-i", str(recording_filepath),
+                    "-c:v", "libx264",
+                    "-pix_fmt", "yuv420p",
+                    "-an",
+                    str(temp_filepath)
+                ]
+                res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=20.0)
+                if res.returncode == 0 and temp_filepath.exists():
+                    recording_filepath.unlink(missing_ok=True)
+                    temp_filepath.rename(recording_filepath)
+                    logger.info("Transcoding completed successfully! Video file converted to H.264 AVC.")
+                else:
+                    logger.warning("FFmpeg transcoding failed (returncode {}): {}".format(res.returncode, res.stderr))
+            except Exception as ex:
+                logger.error("Failed to transcode recorded video to H.264: {}".format(ex))
+                
         file_size = 0
         if recording_filepath.exists():
             file_size = recording_filepath.stat().st_size
