@@ -45,6 +45,46 @@ from cluster_engine import ClusterEngine
 from evidence_engine import save_incident_evidence
 from sync_worker import SyncWorker
 
+
+class SpatialTemporalDeduplicator:
+    """
+    Prevents duplicate evidence crops from being saved and synced
+    for the same physical objects within a spatial and temporal threshold.
+    """
+    def __init__(self, spatial_threshold_m=10.0, temporal_threshold_s=30.0):
+        self.spatial_threshold_m = spatial_threshold_m
+        self.temporal_threshold_s = temporal_threshold_s
+        self.registry = []
+
+    def is_duplicate(self, class_name: str, lat: float, lon: float) -> bool:
+        now = datetime.now()
+        # Clean up expired items from registry
+        self.registry = [
+            item for item in self.registry
+            if (now - item['timestamp']).total_seconds() < self.temporal_threshold_s
+        ]
+
+        for item in self.registry:
+            if item['class_name'] == class_name:
+                # Calculate GPS distance in meters
+                # Approximate 1 degree lat = 111,320m, 1 degree lon = 111,320m * cos(lat)
+                lat_dist = (lat - item['lat']) * 111320.0
+                lon_dist = (lon - item['lon']) * 111320.0 * math.cos(math.radians(lat))
+                distance = math.sqrt(lat_dist * lat_dist + lon_dist * lon_dist)
+
+                if distance < self.spatial_threshold_m:
+                    return True
+
+        # Not a duplicate, register it!
+        self.registry.append({
+            'class_name': class_name,
+            'lat': lat,
+            'lon': lon,
+            'timestamp': now
+        })
+        return False
+
+
 class EdgePipeline:
     """
     Simulates the entire Jetson Nano Edge compute flow running on the drone:
@@ -57,6 +97,9 @@ class EdgePipeline:
         
         # Initialize cluster engine
         self.cluster_engine = ClusterEngine(db_manager=self.db_manager)
+        
+        # Spatial-Temporal Evidence Deduplicator
+        self.deduplicator = SpatialTemporalDeduplicator(spatial_threshold_m=10.0, temporal_threshold_s=30.0)
         
         # Load drone simulator flight path
         self.drone_sim = DroneSimulator(
@@ -91,6 +134,15 @@ class EdgePipeline:
         # Track if we have already generated our dynamic test path for takeoff simulation
         self.dynamic_path_generated = False
         self.current_flight_idx = 0
+
+        # Webcam Support Option
+        self.use_webcam = os.environ.get("USE_WEBCAM") == "1"
+        self.cap = None
+        if self.use_webcam:
+            self.cap = cv2.VideoCapture(0)
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+            logger.info(" [Webcam Engine] Bound laptop webcam (camera index 0) successfully!")
 
     def queue_post(self, request_type, url, data=None, json_data=None):
         if self.upload_queue.full():
@@ -410,41 +462,128 @@ class EdgePipeline:
                     'speed': speed, 'heading': heading, 'timestamp': timestamp, 'battery': int(battery)
                 }
 
+                # Try to grab real webcam frame if active
+                webcam_frame = None
+                if self.use_webcam and self.cap is not None:
+                    ret_wc, wc_frame = self.cap.read()
+                    if ret_wc and wc_frame is not None:
+                        webcam_frame = wc_frame
+
                 #  B. GEOFENCED INFERENCE FILTER (NO HARDCODING) 
-                is_active = self.check_geofence_trigger(lat, lon) and self.detection_enabled
+                # If no start coordinates are configured, default to active for simulation/dry-run testing
+                is_active = (self.check_geofence_trigger(lat, lon) and self.detection_enabled) or (self.start_lat == 0.0)
                 
                 raw_detections = []
                 incidents = []
+                
+                raw_jpeg = None
+                overlay_jpeg = None
+
                 if is_active:
                     # Hot-load active YOLO model (YOLOv8 vs YOLOv10) mid-flight if needed
                     self.load_yolo_model(self.target_model)
                     
-                    # 2. Simulated YOLO Object Detection & GPS Projection (User requirement #2)
-                    raw_detections = self.generate_simulated_detections(lat, lon, step)
+                    if webcam_frame is not None:
+                        # Run real YOLOv8 inference on webcam frame!
+                        # Detect person (0), car (2), motorcycle (3), bus (5), truck (7)
+                        results = self.yolo_model(
+                            webcam_frame,
+                            verbose=False,
+                            classes=[0, 2, 3, 5, 7],
+                            conf=0.30,
+                            iou=0.45,
+                            imgsz=640
+                        )
+                        cls_map = {0: 'person', 2: 'car', 3: 'motorcycle', 5: 'bus', 7: 'truck'}
+                        
+                        raw_detections = []
+                        for box in results[0].boxes:
+                            coords = box.xyxy[0].tolist()
+                            conf = float(box.conf[0].item())
+                            cls_id = int(box.cls[0].item())
+                            
+                            cls_name = cls_map.get(cls_id, 'jcb')
+                            
+                            # Assign simulated coordinate offset close to current drone position for DB/clustering
+                            offset_lat = random.uniform(-0.0001, 0.0001)
+                            offset_lon = random.uniform(-0.0001, 0.0001)
+                            
+                            raw_detections.append({
+                                'class_name': cls_name,
+                                'confidence': conf,
+                                'bbox_x_min': int(coords[0]),
+                                'bbox_y_min': int(coords[1]),
+                                'bbox_x_max': int(coords[2]),
+                                'bbox_y_max': int(coords[3]),
+                                'lat': lat + offset_lat,
+                                'lon': lon + offset_lon
+                            })
+                            
+                        # Generate annotated webcam overlay
+                        overlay_img = results[0].plot()
+                        # Draw forensic telemetry banner at bottom
+                        forensic_bar_h = 36
+                        canvas = np.zeros((overlay_img.shape[0] + forensic_bar_h, overlay_img.shape[1], 3), dtype=np.uint8)
+                        canvas[:overlay_img.shape[0], :] = overlay_img
+                        canvas[overlay_img.shape[0]:, :] = [12, 18, 32]
+                        
+                        label_str = f"WEBCAM MODE | TELEM: {lat:.5f}, {lon:.5f} | {timestamp}"
+                        cv2.putText(canvas, label_str, (10, overlay_img.shape[0] + 24),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 220, 255), 1, cv2.LINE_AA)
+                        
+                        # Compress to JPEGs
+                        _, raw_buf = cv2.imencode(".jpg", webcam_frame)
+                        _, overlay_buf = cv2.imencode(".jpg", canvas)
+                        raw_jpeg = raw_buf.tobytes()
+                        overlay_jpeg = overlay_buf.tobytes()
+                    else:
+                        # 2. Simulated YOLO Object Detection & GPS Projection (User requirement #2)
+                        raw_detections = self.generate_simulated_detections(lat, lon, step)
                     
                     # 3. Spatial Aggregation & DBSCAN Clustering
-                    # Groups trucks/workers/excavators within 60m into single unified incident zones
                     incidents = self.cluster_engine.cluster_detections(raw_detections, eps_meters=60.0)
                     
                     # Save Detections and Incidents locally to edge DB! (User requirement #1)
                     self.cluster_engine.save_incidents_to_db(incidents, telemetry_log_id=telemetry_id)
 
                 # 4. Generate Video Feeds (Raw vs Overlay)
-                raw_jpeg, overlay_jpeg = self.draw_edge_overlay_canvas(telemetry_dict, raw_detections, step)
+                if raw_jpeg is None or overlay_jpeg is None:
+                    if webcam_frame is not None:
+                        _, raw_buf = cv2.imencode(".jpg", webcam_frame)
+                        raw_jpeg = raw_buf.tobytes()
+                        overlay_jpeg = raw_jpeg
+                    else:
+                        raw_jpeg, overlay_jpeg = self.draw_edge_overlay_canvas(telemetry_dict, raw_detections, step)
 
                 # 5. Save Evidence Snapshots to Jetson SSD (offline-first, always runs)
                 if incidents:
                     # Decode overlay jpeg back to numpy for cropping
                     overlay_np = cv2.imdecode(np.frombuffer(overlay_jpeg, np.uint8), cv2.IMREAD_COLOR)
                     for inc in incidents:
-                        evidence_paths = save_incident_evidence(
-                            annotated_frame=overlay_np,
-                            incident=inc,
-                            telemetry=telemetry_dict
-                        )
-                        # Update incident record with first evidence image path
-                        if evidence_paths:
-                            inc['evidence_image_path'] = evidence_paths[0]
+                        # Spatial-Temporal Deduplication Check
+                        filtered_detections = []
+                        for det in inc.get("detections", []):
+                            c_name = det["class_name"]
+                            d_lat = det.get("lat", lat)
+                            d_lon = det.get("lon", lon)
+                            if not self.deduplicator.is_duplicate(c_name, d_lat, d_lon):
+                                filtered_detections.append(det)
+                            else:
+                                logger.info(f" [Deduplication Filter] Blocked duplicate evidence capture for {c_name.upper()} at {d_lat:.5f}, {d_lon:.5f}")
+                        
+                        if filtered_detections:
+                            filtered_inc = inc.copy()
+                            filtered_inc["detections"] = filtered_detections
+                            evidence_paths = save_incident_evidence(
+                                annotated_frame=overlay_np,
+                                incident=filtered_inc,
+                                telemetry=telemetry_dict
+                            )
+                            # Update incident record with first evidence image path
+                            if evidence_paths:
+                                inc['evidence_image_path'] = evidence_paths[0]
+                        else:
+                            evidence_paths = []
                             try:
                                 ev_conn = self.db_manager.get_connection()
                                 ev_cur  = ev_conn.cursor()
@@ -521,6 +660,8 @@ class EdgePipeline:
         finally:
             cursor.close()
             conn.close()
+            if self.cap is not None:
+                self.cap.release()
             self.running = False
             logger.info("Edge Pipeline shut down successfully.")
 
