@@ -439,6 +439,14 @@ def _yolo_inference_loop():
     current_loaded_model_path = str(custom_weights) if custom_weights.exists() else "yolov8n.pt"
 
     while True:
+        # OPTIMIZATION: If no dashboard clients are actively connected, sleep and skip inference!
+        try:
+            if len(manager.active_connections) == 0:
+                time.sleep(1.0)
+                continue
+        except NameError:
+            pass
+
         # Sleep a tiny bit to avoid raw spinning when no frames are available
         time.sleep(0.01)
 
