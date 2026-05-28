@@ -1,0 +1,62 @@
+=============================================================================
+             DJI JETSON NANO - SURVEILLANCE EDGE PIPELINE QUICKSTART
+=============================================================================
+
+This document contains step-by-step instructions for running, testing, and 
+managing the Sand-Mining Detection Edge Pipeline on your laptop and physical 
+Jetson Nano hardware.
+
+-----------------------------------------------------------------------------
+1. LOCAL LAPTOP TESTING (WITH WEBCAM & OFFLINE SIMULATION)
+-----------------------------------------------------------------------------
+You can simulate the entire offline-to-online edge compute pipeline right 
+on your laptop using your built-in webcam.
+
+Step A: Turn OFF your laptop's Wi-Fi / Internet (Simulate remote field).
+Step B: Open your terminal and run the webcam-powered edge pipeline:
+        
+        export USE_WEBCAM=1
+        python main.py edge
+
+Step C: Stand in front of the webcam. It will run YOLOv8, detect you as a
+        'person', cache the incident in the local SQLite database, crop the
+        evidence JPEGs, and keep them queued offline.
+Step D: Turn your laptop's Wi-Fi back ON.
+Step E: The background sync worker will automatically detect the connection,
+        read the SQLite queue, and upload all cached crops to the VPS!
+
+-----------------------------------------------------------------------------
+2. JETSON NANO SYSTEMD SERVICE COMMANDS (HEADLESS AUTO-START)
+-----------------------------------------------------------------------------
+When mounted to the physical drone, the Jetson Nano runs autonomously in the
+background. The pipeline is managed as a background system service.
+
+To manage the headless service on the Jetson Nano, run the following:
+
+- Register & Enable the service to start automatically on Jetson boot:
+  sudo systemctl enable sand-mining-edge
+
+- Start the edge pipeline immediately (without rebooting):
+  sudo systemctl start sand-mining-edge
+
+- Check if the background service is active and running correctly:
+  sudo systemctl status sand-mining-edge
+
+- Watch live terminal output logs in real-time (Excellent for field testing!):
+  journalctl -u sand-mining-edge -f
+
+- Stop the background service (To perform local code changes or maintenance):
+  sudo systemctl stop sand-mining-edge
+
+- Restart the background service:
+  sudo systemctl restart sand-mining-edge
+
+-----------------------------------------------------------------------------
+3. JETSON NANO GPU HARDWARE MONITORING
+-----------------------------------------------------------------------------
+While the pipeline is running on the physical Jetson Nano drone board, you 
+can monitor its hardware temperatures and GPU usage by running:
+
+  tegrastats
+
+=============================================================================
