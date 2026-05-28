@@ -668,7 +668,12 @@ class ConnectionManager:
     def disconnect(self, websocket):
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
-            logger.info("Client disconnected. Total clients: {}".format(len(self.active_connections)))
+        # Clean up subscriptions from all active drones
+        for drone_id, drone in list(active_drones.items()):
+            if websocket in drone["subscribed_clients"]:
+                drone["subscribed_clients"].remove(websocket)
+                check_yolo_thread_lifecycle(drone_id)
+        logger.info("Client disconnected. Total clients: {}".format(len(self.active_connections)))
 
     async def broadcast(self, message):
         for connection in self.active_connections:
@@ -679,6 +684,184 @@ class ConnectionManager:
                 pass
 
 manager = ConnectionManager()
+
+active_drones = {}
+drones_lock = threading.Lock()
+
+def get_or_create_drone(drone_id: str):
+    """
+    Retrieves or initializes a dynamic state registry block for a specific drone_id.
+    """
+    global active_drones
+    with drones_lock:
+        if drone_id not in active_drones:
+            active_drones[drone_id] = {
+                "latest_raw_frame": b"",
+                "latest_overlay_frame": b"",
+                "latest_drone_coords": {"lat": 0.0, "lon": 0.0},
+                "local_webcam_mode": False,
+                "last_frame_time": 0.0,
+                "edge_rendering_active": False,  # If True, bypass server-side YOLO!
+                "subscribed_clients": set(),     # WebSocket connections subscribed to this drone
+                "yolo_thread": None,
+                "yolo_thread_running": False,
+                "raw_event": None,               # Lazily initialized in async loop
+                "overlay_event": None            # Lazily initialized in async loop
+            }
+        return active_drones[drone_id]
+
+async def get_drone_event(drone_id: str, stream_type: str) -> asyncio.Event:
+    """Lazily retrieves or constructs an asyncio.Event for a specific drone stream."""
+    drone = get_or_create_drone(drone_id)
+    key = "raw_event" if stream_type == "raw" else "overlay_event"
+    if drone[key] is None:
+        drone[key] = asyncio.Event()
+    return drone[key]
+
+def notify_drone_frame(drone_id: str, stream_type: str):
+    """Signals all stream generators watching this drone that a new frame is ready."""
+    global main_loop
+    if not main_loop:
+        return
+    drone = active_drones.get(drone_id)
+    if not drone:
+        return
+    key = "raw_event" if stream_type == "raw" else "overlay_event"
+    event = drone[key]
+    if event:
+        main_loop.call_soon_threadsafe(event.set)
+
+def drone_yolo_inference_loop(drone_id: str):
+    """
+    Background daemon thread: periodically grabs the latest raw frame for a specific drone_id,
+    runs YOLO inference on it, and updates its latest_overlay_frame.
+    Runs ON-DEMAND only when an operator is actively watching!
+    """
+    global _yolo_model
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return
+
+    drone = active_drones.get(drone_id)
+    if not drone:
+        return
+
+    logger.info("Dedicated YOLO inference loop started for drone: {}".format(drone_id))
+
+    while drone["yolo_thread_running"] and len(drone["subscribed_clients"]) > 0 and not drone["edge_rendering_active"]:
+        # Get the latest raw BGR frame from raw bytes
+        raw_bytes = drone["latest_raw_frame"]
+        if not raw_bytes:
+            time.sleep(0.05)
+            continue
+
+        try:
+            nparr = np.frombuffer(raw_bytes, np.uint8)
+            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if frame is None:
+                time.sleep(0.05)
+                continue
+
+            # Run YOLO inference if model is loaded
+            if _yolo_model is not None:
+                # Run YOLO inference on dynamic frames (imgsz=640 keeps CPU extremely lightweight!)
+                results = _yolo_model(frame, imgsz=640, verbose=False)
+                
+                # Render detections on the frame
+                annotated_frame = results[0].plot()
+                
+                # Compress to JPEG
+                _, buf = cv2.imencode(".jpg", annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
+                overlay_bytes = buf.tobytes()
+                
+                # Update dynamic overlay frame
+                drone["latest_overlay_frame"] = overlay_bytes
+                
+                # Signal frame ready
+                notify_drone_frame(drone_id, "overlay")
+                
+            else:
+                # Mirror raw frame if no model
+                drone["latest_overlay_frame"] = raw_bytes
+                notify_drone_frame(drone_id, "overlay")
+
+        except Exception as e:
+            logger.error("Error in drone YOLO loop ({}): {}".format(drone_id, e))
+            time.sleep(0.1)
+
+        # Throttled sleep to keep CPU cool
+        time.sleep(0.033) # ~30 FPS
+
+    drone["yolo_thread_running"] = False
+    logger.info("Dedicated YOLO inference loop terminated for drone: {}".format(drone_id))
+
+def check_yolo_thread_lifecycle(drone_id: str):
+    """
+    Manages the lifecycle of a dedicated YOLO thread for a specific drone_id.
+    - If there are active subscribers AND the drone is NOT uploading pre-rendered frames (Pattern A):
+        -> Spawn/Start the YOLO thread if it is not already running!
+    - Else:
+        -> Terminate/Stop the YOLO thread to save CPU (Pattern B)!
+    """
+    drone = active_drones.get(drone_id)
+    if not drone:
+        return
+
+    subscribers_count = len(drone["subscribed_clients"])
+    is_edge_rendering = drone["edge_rendering_active"]
+
+    should_run = (subscribers_count > 0) and (not is_edge_rendering)
+
+    if should_run and not drone["yolo_thread_running"]:
+        logger.info("🚀 [YOLO Thread Manager] Starting on-demand YOLO thread for drone: {}".format(drone_id))
+        drone["yolo_thread_running"] = True
+        t = threading.Thread(
+            target=drone_yolo_inference_loop,
+            args=(drone_id,),
+            daemon=True,
+            name="yolo-{}".format(drone_id)
+        )
+        drone["yolo_thread"] = t
+        t.start()
+    elif not should_run and drone["yolo_thread_running"]:
+        logger.info("💤 [YOLO Thread Manager] Stopping/Sleeping idle YOLO thread for drone: {}".format(drone_id))
+        drone["yolo_thread_running"] = False
+
+async def broadcast_drone_data(drone_id: str, message: dict):
+    """Broadcasts a telemetry or warning payload to all connected clients AND selectively to drone-specific subscribers."""
+    # 1. Global broadcast (legacy dashboard fallback)
+    await manager.broadcast(message)
+
+    # 2. Targeted subscribers broadcast
+    drone = active_drones.get(drone_id)
+    if drone:
+        for connection in list(drone["subscribed_clients"]):
+            try:
+                await connection.send_json(message)
+            except Exception:
+                pass
+
+async def notify_drone_subscribers(drone_id: str, stream_type: str, frame_bytes: bytes):
+    """Directly pushes live dynamic MJPEG frame updates to specific drone WebSocket subscribers (if they use WS stream)."""
+    drone = active_drones.get(drone_id)
+    if not drone:
+        return
+    
+    import base64
+    b64_frame = base64.b64encode(frame_bytes).decode("utf-8")
+    message = {
+        "type": "video_frame",
+        "drone_id": drone_id,
+        "stream_type": stream_type,
+        "frame": b64_frame
+    }
+    for connection in list(drone["subscribed_clients"]):
+        try:
+            await connection.send_json(message)
+        except Exception:
+            pass
 
 # Global frames storage for live multipart streaming
 # In a physical deployment, the Jetson Nano continuously POSTs frames here,
@@ -1165,9 +1348,13 @@ async def startup_event():
 
 
 # Frame generator for multipart MJPEG streaming
-async def frame_generator(stream_type: str):
+async def frame_generator(stream_type: str, drone_id: Optional[str] = None):
     global latest_raw_frame, latest_overlay_frame, raw_frame_event, overlay_frame_event
-    event = raw_frame_event if stream_type == "raw" else overlay_frame_event
+    
+    if drone_id:
+        event = await get_drone_event(drone_id, stream_type)
+    else:
+        event = raw_frame_event if stream_type == "raw" else overlay_frame_event
     
     # 1. Fallback dummy frame if no feed is active
     # A simple 1x1 black pixel JPEG byte representation
@@ -1181,7 +1368,11 @@ async def frame_generator(stream_type: str):
                 pass
             event.clear()
 
-        frame = latest_raw_frame if stream_type == "raw" else latest_overlay_frame
+        if drone_id:
+            drone = get_or_create_drone(drone_id)
+            frame = drone["latest_raw_frame"] if stream_type == "raw" else drone["latest_overlay_frame"]
+        else:
+            frame = latest_raw_frame if stream_type == "raw" else latest_overlay_frame
         
         # If no frame has been sent yet, serve the dummy black pixel
         if not frame:
@@ -1192,35 +1383,42 @@ async def frame_generator(stream_type: str):
 
 # Live Video Endpoints (multipart MJPEG)
 @app.get("/stream/raw")
-async def stream_raw(request: Request):
+async def stream_raw(request: Request, drone_id: Optional[str] = Query(None)):
     """Serves the raw video feed from the DJI drone camera."""
     user = get_session_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Unauthorized")
     return StreamingResponse(
-        frame_generator("raw"),
+        frame_generator("raw", drone_id),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
 
 @app.get("/stream/overlay")
-async def stream_overlay(request: Request):
+async def stream_overlay(request: Request, drone_id: Optional[str] = Query(None)):
     """Serves the real-time AI bounding box overlay video feed."""
     user = get_session_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Unauthorized")
     return StreamingResponse(
-        frame_generator("overlay"),
+        frame_generator("overlay", drone_id),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
 
 # Edge Frame Receiver Endpoint
 @app.post("/api/edge/frame")
-async def receive_edge_frame(stream_type: str, request: Request):
+async def receive_edge_frame(stream_type: str, request: Request, drone_id: Optional[str] = Query(None)):
     """Receives compressed JPEG frames uploaded by the Edge Jetson Nano or local Webcam pipeline."""
     global latest_raw_frame, latest_overlay_frame, latest_webcam_detections, local_webcam_mode, last_webcam_frame_time, latest_bgr_frame
     frame_data = await request.body()
     if not frame_data:
         return {"status": "ok"}
+
+    # Dynamic Drone fleet registration
+    target_drone = None
+    if drone_id:
+        target_drone = get_or_create_drone(drone_id)
+        target_drone["last_frame_time"] = time.time()
+        target_drone["local_webcam_mode"] = True
 
     # Browser is streaming frames to us! Activate local webcam mode so recording / detection pipelines fall back to this stream
     local_webcam_mode = True
@@ -1246,8 +1444,15 @@ async def receive_edge_frame(stream_type: str, request: Request):
                 
                 # Re-encode flipped frame to update the raw stream
                 _, raw_buf = cv2.imencode(".jpg", stream_frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
-                latest_raw_frame = raw_buf.tobytes()
+                jpeg_bytes = raw_buf.tobytes()
+
+                # Legacy fallback
+                latest_raw_frame = jpeg_bytes
                 notify_raw_frame()
+
+                if target_drone:
+                    target_drone["latest_raw_frame"] = jpeg_bytes
+                    notify_drone_frame(drone_id, "raw")
                 
                 with frame_lock:
                     latest_bgr_frame = frame.copy()
@@ -1255,20 +1460,27 @@ async def receive_edge_frame(stream_type: str, request: Request):
             logger.debug("VPS received-frame decode error: {}".format(exc))
             
     elif stream_type == "overlay":
-        # Save received overlay JPEG bytes to latest_overlay_frame and trigger notify_overlay_frame()
+        # Legacy fallback
         latest_overlay_frame = frame_data
         notify_overlay_frame()
+
+        if target_drone:
+            target_drone["latest_overlay_frame"] = frame_data
+            target_drone["edge_rendering_active"] = True  # Pattern A: Edge pre-rendering bypasses server YOLO!
+            notify_drone_frame(drone_id, "overlay")
             
     return {"status": "ok"}
 
 # Edge Telemetry & Event Sync Endpoint
 @app.post("/api/edge/sync")
-async def receive_edge_sync(data: dict):
+async def receive_edge_sync(data: dict, drone_id: Optional[str] = Query(None)):
     """
     Receives real-time telemetry logs, detections, and alerts from the Jetson Nano/Mobile App
     and broadcasts them immediately to the operator dashboard via WebSockets.
     Also handles base64-encoded evidence images from the offline sync worker.
     """
+    effective_drone_id = drone_id if drone_id else "default_drone"
+    
     # Auto-wrap flat telemetry payloads from the mobile companion app
     if "lat" in data and "lon" in data and data.get("type") is None:
         data = {
@@ -1276,14 +1488,26 @@ async def receive_edge_sync(data: dict):
             "payload": data
         }
 
-    logger.info("Sync event received. Type: {}".format(data.get('type')))
+    data["drone_id"] = effective_drone_id
+
+    logger.info("Sync event received for drone: {}. Type: {}".format(effective_drone_id, data.get('type')))
 
     # If payload contains a base64 evidence image, decode and save it cloud-side
     payload = data.get("payload", {})
     if data.get("type") == "telemetry":
         global latest_drone_coords
-        latest_drone_coords["lat"] = float(payload.get("lat", 0.0))
-        latest_drone_coords["lon"] = float(payload.get("lon", 0.0))
+        lat_val = float(payload.get("lat", 0.0))
+        lon_val = float(payload.get("lon", 0.0))
+        
+        # Legacy fallback
+        latest_drone_coords["lat"] = lat_val
+        latest_drone_coords["lon"] = lon_val
+        
+        # Registry update
+        drone_state = get_or_create_drone(effective_drone_id)
+        drone_state["latest_drone_coords"]["lat"] = lat_val
+        drone_state["latest_drone_coords"]["lon"] = lon_val
+        
     img_b64 = payload.pop("evidence_image_b64", None)
     if img_b64:
         try:
@@ -1318,8 +1542,8 @@ async def receive_edge_sync(data: dict):
         except Exception as e:
             logger.error("Could not save evidence image: {}".format(e))
 
-    # Broadcast to all open dashboards
-    await manager.broadcast(data)
+    # Broadcast to all open dashboards or route to dynamic subscribers
+    await broadcast_drone_data(effective_drone_id, data)
     return {"status": "ok"}
 
 # REST APIs for historical query & filtering
@@ -1878,6 +2102,26 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             # Keep connection alive, listen for any client messages if needed
             data = await websocket.receive_text()
+            try:
+                msg = json.loads(data)
+                if msg.get("action") == "subscribe":
+                    drone_id = msg.get("drone_id")
+                    if drone_id:
+                        drone = get_or_create_drone(drone_id)
+                        drone["subscribed_clients"].add(websocket)
+                        logger.info("Client subscribed to drone: {}".format(drone_id))
+                        # Trigger YOLO thread manager lifecycle check
+                        check_yolo_thread_lifecycle(drone_id)
+                elif msg.get("action") == "unsubscribe":
+                    drone_id = msg.get("drone_id")
+                    if drone_id:
+                        drone = active_drones.get(drone_id)
+                        if drone and websocket in drone["subscribed_clients"]:
+                            drone["subscribed_clients"].remove(websocket)
+                            logger.info("Client unsubscribed from drone: {}".format(drone_id))
+                            check_yolo_thread_lifecycle(drone_id)
+            except Exception:
+                pass
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:

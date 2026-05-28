@@ -109,6 +109,7 @@ class EdgePipeline:
         )
         
         self.running = False
+        self.drone_id = os.getenv("DRONE_ID", "dji_jetson_nano_01")
         self.frame_w, self.frame_h = 1280, 720  # Set resolution to 1280x720 to reduce overhead
         self.upload_queue = queue.Queue(maxsize=10)
 
@@ -605,20 +606,20 @@ class EdgePipeline:
                 # Upload Raw Video Frame
                 self.queue_post(
                     "post_raw",
-                    f"{self.cloud_url}/api/edge/frame?stream_type=raw",
+                    f"{self.cloud_url}/api/edge/frame?stream_type=raw&drone_id={self.drone_id}",
                     data=raw_jpeg
                 )
                 # Upload Overlay Video Frame
                 self.queue_post(
                     "post_raw",
-                    f"{self.cloud_url}/api/edge/frame?stream_type=overlay",
+                    f"{self.cloud_url}/api/edge/frame?stream_type=overlay&drone_id={self.drone_id}",
                     data=overlay_jpeg
                 )
                 
                 # Send Telemetry log sync update via API
                 self.queue_post(
                     "post_json",
-                    f"{self.cloud_url}/api/edge/sync",
+                    f"{self.cloud_url}/api/edge/sync?drone_id={self.drone_id}",
                     json_data={
                         "type": "telemetry",
                         "payload": {
@@ -636,7 +637,7 @@ class EdgePipeline:
                 for inc in incidents:
                     self.queue_post(
                         "post_json",
-                        f"{self.cloud_url}/api/edge/sync",
+                        f"{self.cloud_url}/api/edge/sync?drone_id={self.drone_id}",
                         json_data={
                             "type": "detections",
                             "payload": {

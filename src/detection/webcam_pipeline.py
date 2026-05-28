@@ -42,11 +42,13 @@ class WebcamPipeline:
         target_fps = 15.0,
         jpeg_quality = 75,
     ):
+        import os
         self.cloud_url     = cloud_url.rstrip("/")
         self.camera_index  = camera_index
         self.target_fps    = target_fps
         self.jpeg_quality  = jpeg_quality
         self.running       = False
+        self.drone_id      = os.getenv("DRONE_ID", "default_webcam_drone")
         self._session = None
         self.upload_queue  = queue.Queue(maxsize=2)
 
@@ -113,8 +115,10 @@ class WebcamPipeline:
         unreachable (same resilient pattern as the edge pipeline).
         """
         try:
+            sep = "&" if "?" in endpoint else "?"
+            url = self.cloud_url + endpoint + f"{sep}drone_id={self.drone_id}"
             self._session.post(
-                self.cloud_url + endpoint,
+                url,
                 data=jpeg_bytes,
                 headers={"Content-Type": "image/jpeg"},
                 timeout=0.3,
