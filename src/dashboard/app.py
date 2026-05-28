@@ -1257,10 +1257,17 @@ async def receive_edge_frame(stream_type: str, request: Request):
 @app.post("/api/edge/sync")
 async def receive_edge_sync(data: dict):
     """
-    Receives real-time telemetry logs, detections, and alerts from the Jetson Nano
+    Receives real-time telemetry logs, detections, and alerts from the Jetson Nano/Mobile App
     and broadcasts them immediately to the operator dashboard via WebSockets.
     Also handles base64-encoded evidence images from the offline sync worker.
     """
+    # Auto-wrap flat telemetry payloads from the mobile companion app
+    if "lat" in data and "lon" in data and data.get("type") is None:
+        data = {
+            "type": "telemetry",
+            "payload": data
+        }
+
     logger.info("Sync event received. Type: {}".format(data.get('type')))
 
     # If payload contains a base64 evidence image, decode and save it cloud-side
