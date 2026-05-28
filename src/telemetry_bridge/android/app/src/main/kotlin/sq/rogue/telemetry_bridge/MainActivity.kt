@@ -1,12 +1,18 @@
 package sq.rogue.telemetry_bridge
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import androidx.annotation.NonNull
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.util.ArrayList
 
 // Import DJI SDK classes
 import dji.common.error.DJIError
@@ -22,6 +28,14 @@ class MainActivity : FlutterActivity() {
     private var methodChannel: MethodChannel? = null
     private val handler = Handler(Looper.getMainLooper())
 
+    private val REQUEST_PERMISSION_CODE = 12345
+    private val REQUIRED_PERMISSION_LIST = arrayOf(
+        Manifest.permission.WRITE_EXTERNAL_STORAGE,
+        Manifest.permission.READ_PHONE_STATE,
+        Manifest.permission.ACCESS_FINE_LOCATION,
+        Manifest.permission.ACCESS_COARSE_LOCATION
+    )
+
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
@@ -29,8 +43,8 @@ class MainActivity : FlutterActivity() {
         methodChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
                 "startDJISDK" -> {
-                    registerDJISDK()
-                    result.success("Initialization started.")
+                    checkAndRequestPermissions()
+                    result.success("Initialization and permission checks started.")
                 }
                 "getSDKStatus" -> {
                     val registered = DJISDKManager.getInstance().hasSDKRegistered()
@@ -45,8 +59,47 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Automatically start registration on app launch
-        handler.postDelayed({ registerDJISDK() }, 1000)
+        // Automatically trigger permission check on app launch
+        handler.postDelayed({ checkAndRequestPermissions() }, 1000)
+    }
+
+    private fun checkAndRequestPermissions() {
+        val missingPermissions = ArrayList<String>()
+        for (permission in REQUIRED_PERMISSION_LIST) {
+            if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
+                missingPermissions.add(permission)
+            }
+        }
+
+        if (missingPermissions.isNotEmpty()) {
+            sendConsoleLog("[SDK] Requesting required runtime permissions...")
+            ActivityCompat.requestPermissions(
+                this,
+                missingPermissions.toTypedArray(),
+                REQUEST_PERMISSION_CODE
+            )
+        } else {
+            registerDJISDK()
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_PERMISSION_CODE) {
+            var allGranted = true
+            for (result in grantResults) {
+                if (result != PackageManager.PERMISSION_GRANTED) {
+                    allGranted = false
+                    break
+                }
+            }
+            if (allGranted) {
+                sendConsoleLog("[SDK] All permissions granted! Unlocking registration.")
+                registerDJISDK()
+            } else {
+                sendConsoleLog("[SDK ERROR] Missing required permissions. DJI SDK registration aborted.")
+            }
+        }
     }
 
     private fun registerDJISDK() {
@@ -94,7 +147,7 @@ class MainActivity : FlutterActivity() {
                 sendConsoleLog("[DJI] Accessory component changed: ${key?.name}")
             }
 
-            override fun onInitProcess(p0: dji.common.DJISDKInitEvent?, p1: Int) {
+            override fun onInitProcess(p0: dji.sdk.sdkmanager.DJISDKInitEvent?, p1: Int) {
                 // DJI SDK init process log
             }
 
@@ -105,7 +158,6 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun startConnectionListener() {
-        // Starts background checks to bind immediately if device is already plugged in
         DJISDKManager.getInstance().startConnectionToProduct()
     }
 
@@ -122,7 +174,6 @@ class MainActivity : FlutterActivity() {
                 val lon = state.aircraftLocation.longitude
                 val alt = state.aircraftLocation.altitude.toDouble()
                 
-                // Calculate horizontal speed in m/s from X & Y velocities
                 val speed = Math.sqrt(
                     Math.pow(state.velocityX.toDouble(), 2.0) +
                     Math.pow(state.velocityY.toDouble(), 2.0)
@@ -135,14 +186,12 @@ class MainActivity : FlutterActivity() {
                     "speed" to speed
                 )
 
-                // Dispatch state payload to Flutter main thread
                 handler.post {
                     methodChannel?.invokeMethod("onTelemetryUpdate", telemetryData)
                 }
             }
         }
 
-        // Setup battery percentage listener
         val battery = aircraft.battery
         if (battery != null) {
             sendConsoleLog("[SDK] Binding to battery hardware callbacks...")

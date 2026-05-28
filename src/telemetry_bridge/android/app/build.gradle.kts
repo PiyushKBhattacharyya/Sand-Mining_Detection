@@ -24,10 +24,17 @@ android {
         applicationId = "sq.rogue.telemetry_bridge"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = 21 // DJI Mobile SDK requires API level 21 or higher
-        targetSdk = flutter.targetSdkVersion
+        minSdk = flutter.minSdkVersion // DJI Mobile SDK requires API level 21 or higher
+        targetSdk = 33 // Target Android 13 (API 33) to bypass Android 14+ strict dynamic broadcast receiver checks
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        
+        // DJI SDK is extremely large; multidex is mandatory to avoid class loading limitations
+        multiDexEnabled = true
+
+        ndk {
+            abiFilters.addAll(setOf("armeabi-v7a", "arm64-v8a"))
+        }
     }
 
     buildTypes {
@@ -35,10 +42,17 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+        debug {
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 
     packaging {
+        jniLibs {
+            keepDebugSymbols.add("**/*.so")
+        }
         resources {
             excludes.add("META-INF/rxjava.properties")
             excludes.add("assets/location_map_gps_locked.png")
@@ -50,6 +64,11 @@ android {
 dependencies {
     implementation("com.dji:dji-sdk:4.16.2")
     compileOnly("com.dji:dji-sdk-provided:4.16.2")
+
+    // Required AndroidX libraries to resolve DJI SDK XML layout linking (ConstraintLayout & AppCompat)
+    implementation("androidx.appcompat:appcompat:1.6.1")
+    implementation("androidx.constraintlayout:constraintlayout:2.1.4")
+    implementation("com.google.android.material:material:1.9.0")
 }
 
 flutter {
