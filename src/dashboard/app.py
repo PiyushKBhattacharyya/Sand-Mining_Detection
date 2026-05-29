@@ -1943,6 +1943,41 @@ async def register_drone(request: Request, data: dict):
         cursor.close()
         conn.close()
 
+@app.put("/api/drones/{drone_id}/processing_mode")
+async def update_drone_processing_mode(request: Request, drone_id: str, data: dict):
+    """
+    WHAT: Updates the compute/AI processing location (cloud or edge) of a drone.
+    WHY:  Operators need to dynamically hot-swap models or computational modes mid-flight.
+    """
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    processing_mode = data.get("processing_mode", "cloud").strip().lower()
+    if processing_mode not in ("cloud", "edge"):
+        raise HTTPException(status_code=400, detail="Invalid processing_mode")
+        
+    conn = db_manager.get_connection()
+    cursor = conn.cursor()
+    try:
+        q = "UPDATE drones SET processing_mode = %s WHERE drone_id = %s;" if db_manager.db_type == "postgresql" else "UPDATE drones SET processing_mode = ? WHERE drone_id = ?;"
+        cursor.execute(q, (processing_mode, drone_id))
+        conn.commit()
+        
+        # Instantly hot-swap memory state and registry flags
+        drone = get_or_create_drone(drone_id)
+        drone["processing_mode"] = processing_mode
+        drone["edge_rendering_active"] = (processing_mode == "edge")
+        
+        logger.info("Updated drone {} processing mode to {}".format(drone_id, processing_mode))
+        return {"success": True, "drone_id": drone_id, "processing_mode": processing_mode}
+    except Exception as e:
+        logger.error("Error updating drone processing mode: {}".format(e))
+        raise HTTPException(status_code=500, detail="Database error while updating processing mode")
+    finally:
+        cursor.close()
+        conn.close()
+
 @app.delete("/api/drones/{drone_id}")
 def delete_drone(request: Request, drone_id: str):
     """
