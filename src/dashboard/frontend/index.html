@@ -2227,8 +2227,9 @@
                 hudProcessingModeSelect.addEventListener('change', (e) => {
                     const newMode = e.target.value;
                     if (currentDroneId === 'default_drone') {
-                        alert('Compute mode settings can only be hot-swapped on dynamically registered fleet assets!');
-                        hudProcessingModeSelect.value = dronesModeMap[currentDroneId] || 'cloud';
+                        dronesModeMap['default_drone'] = newMode;
+                        updateProcessingModeUi();
+                        console.log(`Swapped client-side compute mode for Default Drone to ${newMode}`);
                         return;
                     }
 
