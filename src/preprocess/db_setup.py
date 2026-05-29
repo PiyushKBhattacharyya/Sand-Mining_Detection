@@ -155,11 +155,24 @@ class DatabaseManager:
         );
         """
 
+        # 6. Create Drones table for storing registered drones
+        drones_table = f"""
+        CREATE TABLE IF NOT EXISTS drones (
+            id {serial_type},
+            drone_id VARCHAR(100) UNIQUE NOT NULL,
+            drone_name VARCHAR(100) NOT NULL,
+            rtmp_stream_key VARCHAR(100) UNIQUE,
+            status VARCHAR(50) DEFAULT 'offline',
+            created_at {t_timestamptz} NOT NULL DEFAULT {now_default}
+        );
+        """
+
         cursor.execute(telemetry_table)
         cursor.execute(incidents_table)
         cursor.execute(detections_table)
         cursor.execute(users_table)
         cursor.execute(recordings_table)
+        cursor.execute(drones_table)
 
         #  DYNAMIC COLUMN SCHEMA MIGRATIONS 
         # WHAT: Dynamically append columns if database was pre-created before update.
@@ -225,7 +238,8 @@ class DatabaseManager:
             "CREATE INDEX IF NOT EXISTS idx_incidents_coords ON incidents (centroid_latitude, centroid_longitude);",
             "CREATE INDEX IF NOT EXISTS idx_incidents_sync ON incidents (synced_to_cloud);",
             "CREATE INDEX IF NOT EXISTS idx_users_username ON users (username);",
-            "CREATE INDEX IF NOT EXISTS idx_recordings_time ON recordings (timestamp);"
+            "CREATE INDEX IF NOT EXISTS idx_recordings_time ON recordings (timestamp);",
+            "CREATE INDEX IF NOT EXISTS idx_drones_id ON drones (drone_id);"
         ]
 
         for idx in indexes:

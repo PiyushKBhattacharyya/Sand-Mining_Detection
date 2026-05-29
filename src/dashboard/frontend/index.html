@@ -683,6 +683,9 @@
                     <select id="drone-select" style="background: #111827; border: 1px solid #374151; color: #e5e7eb; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 600; outline: none; cursor: pointer; font-family: inherit;">
                         <option value="default_drone">Default Drone</option>
                     </select>
+                    <button id="btn-add-drone" style="margin-left: 6px; background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.3); color: #4ade80; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all 0.2s;" onmouseover="this.style.background='rgba(34,197,94,0.25)'" onmouseout="this.style.background='rgba(34,197,94,0.15)'">
+                        + Add
+                    </button>
                 </div>
                 <!-- Connection -->
                 <div class="chip">
@@ -1333,7 +1336,96 @@
         let droneMarkersMap = {};
         let flightTrailsMap = {};
         let activeDronesRegistry = new Set(['default_drone']);
+        let dronesNameMap = { 'default_drone': 'Default Drone' };
         let currentDroneId = 'default_drone';
+
+        function updateRtmpIngestUrl() {
+            const rtmpEl = document.getElementById('rtmp-ingest-url');
+            if (rtmpEl) {
+                const streamKey = currentDroneId === 'default_drone' ? 'drone' : currentDroneId;
+                rtmpEl.textContent = `rtmp://187.127.142.58:1935/live/${streamKey}`;
+            }
+        }
+
+        function fetchDrones() {
+            fetch(BASE_PATH + 'api/drones')
+                .then(r => r.json())
+                .then(data => {
+                    const droneSelect = document.getElementById('drone-select');
+                    const currentValue = droneSelect.value;
+                    
+                    // Clear and rebuild choices
+                    droneSelect.innerHTML = '';
+                    
+                    const optDefault = document.createElement('option');
+                    optDefault.value = 'default_drone';
+                    optDefault.textContent = 'Default Drone';
+                    droneSelect.appendChild(optDefault);
+                    
+                    data.forEach(d => {
+                        activeDronesRegistry.add(d.drone_id);
+                        dronesNameMap[d.drone_id] = d.drone_name;
+                        
+                        const opt = document.createElement('option');
+                        opt.value = d.drone_id;
+                        opt.textContent = `${d.drone_name} (${d.drone_id})`;
+                        droneSelect.appendChild(opt);
+                    });
+                    
+                    // Re-select if exists
+                    if (Array.from(droneSelect.options).some(o => o.value === currentValue)) {
+                        droneSelect.value = currentValue;
+                    } else {
+                        droneSelect.value = 'default_drone';
+                    }
+                    
+                    updateRtmpIngestUrl();
+                })
+                .catch(err => console.error("Error fetching registered drones:", err));
+        }
+
+        function toggleAddDroneModal(show) {
+            const modal = document.getElementById('add-drone-modal');
+            const errorEl = document.getElementById('modal-error-msg');
+            if (modal) {
+                modal.style.display = show ? 'flex' : 'none';
+            }
+            if (!show) {
+                document.getElementById('add-drone-form').reset();
+                if (errorEl) errorEl.style.display = 'none';
+            }
+        }
+
+        function submitAddDroneForm(event) {
+            event.preventDefault();
+            const droneId = document.getElementById('modal-drone-id').value.trim();
+            const droneName = document.getElementById('modal-drone-name').value.trim();
+            const errorEl = document.getElementById('modal-error-msg');
+            
+            if (!droneId || !droneName) return;
+
+            fetch(BASE_PATH + 'api/drones', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ drone_id: droneId, drone_name: droneName })
+            })
+            .then(r => {
+                if (!r.ok) {
+                    return r.json().then(err => { throw new Error(err.detail || 'Failed to register drone'); });
+                }
+                return r.json();
+            })
+            .then(data => {
+                toggleAddDroneModal(false);
+                fetchDrones();
+            })
+            .catch(err => {
+                if (errorEl) {
+                    errorEl.textContent = err.message;
+                    errorEl.style.display = 'block';
+                }
+            });
+        }
 
         let detectionMarkers = [];
         let followDrone = false;
@@ -1566,6 +1658,7 @@
 
             currentDroneId = nextDroneId;
             updateDroneMarkerStyles();
+            updateRtmpIngestUrl();
 
             // Hot-swap stream sources
             document.getElementById('img-stream-raw').src = BASE_PATH + 'stream/raw?drone_id=' + encodeURIComponent(currentDroneId);
@@ -1579,6 +1672,12 @@
                     map.setView(latlng, map.getZoom(), { animate: true });
                 }
             }
+        });
+
+        // Add Drone Button Click Listener
+        document.getElementById('btn-add-drone').addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleAddDroneModal(true);
         });
 
         function connectWebSocket() {
@@ -2468,8 +2567,40 @@
 
         // Initialize
         checkAuthStatus();
+        fetchDrones();
         connectWebSocket();
     </script>
+
+    <!-- Add Drone Modal -->
+    <div id="add-drone-modal" style="display: none; position: fixed; inset: 0; z-index: 99999; align-items: center; justify-content: center; padding: 16px;">
+        <!-- Backdrop -->
+        <div style="position: absolute; inset: 0; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(8px); transition: all 0.3s;" onclick="toggleAddDroneModal(false)"></div>
+        <!-- Dialog -->
+        <div style="position: relative; width: 100%; max-width: 440px; background: rgba(17, 24, 39, 0.95); border: 1px solid #374151; border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); overflow: hidden; padding: 24px; font-family: inherit; color: #e5e7eb;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; border-bottom: 1px solid #374151; padding-bottom: 12px;">
+                <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #f3f4f6; font-family:'Outfit','Inter',sans-serif;">Register New Fleet Asset</h3>
+                <button onclick="toggleAddDroneModal(false)" style="background: none; border: none; color: #9ca3af; cursor: pointer; font-size: 20px; outline: none; line-height: 1;">&times;</button>
+            </div>
+            
+            <form id="add-drone-form" onsubmit="submitAddDroneForm(event)">
+                <div style="margin-bottom: 16px;">
+                    <label style="display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; tracking: 0.05em; color: #9ca3af; margin-bottom: 6px; font-family:'Inter',sans-serif;">Drone Name / Call Sign *</label>
+                    <input type="text" id="modal-drone-name" placeholder="e.g. East River Patrol" required style="width: 100%; background: #1f2937; border: 1px solid #4b5563; color: #f3f4f6; border-radius: 8px; padding: 10px 12px; font-size: 13px; outline: none; transition: border-color 0.2s;" onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#4b5563'">
+                </div>
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; tracking: 0.05em; color: #9ca3af; margin-bottom: 6px; font-family:'Inter',sans-serif;">Unique Drone ID *</label>
+                    <input type="text" id="modal-drone-id" placeholder="e.g. drone_101" required pattern="^[a-zA-Z0-9_]+$" style="width: 100%; background: #1f2937; border: 1px solid #4b5563; color: #f3f4f6; border-radius: 8px; padding: 10px 12px; font-size: 13px; outline: none; transition: border-color 0.2s;" onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#4b5563'">
+                </div>
+                
+                <div id="modal-error-msg" style="display: none; color: #f87171; font-size: 12px; font-weight: 600; margin-bottom: 16px; background: rgba(239, 68, 68, 0.1); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(239, 68, 68, 0.2); font-family:'Inter',sans-serif;"></div>
+
+                <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                    <button type="button" onclick="toggleAddDroneModal(false)" style="background: #374151; border: 1px solid #4b5563; color: #d1d5db; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family:'Inter',sans-serif;">Cancel</button>
+                    <button type="submit" style="background: #22c55e; border: none; color: white; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.2); font-family:'Inter',sans-serif;" onmouseover="this.style.background='#16a34a'" onmouseout="this.style.background='#22c55e'">Register Asset</button>
+                </div>
+            </form>
+        </div>
+    </div>
 </body>
 
 </html>

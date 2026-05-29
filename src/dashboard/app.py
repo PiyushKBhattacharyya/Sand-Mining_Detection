@@ -688,6 +688,38 @@ manager = ConnectionManager()
 active_drones = {}
 drones_lock = threading.Lock()
 
+def load_drones_from_db():
+    """Queries the database and pre-populates registered drones into active_drones."""
+    global active_drones
+    try:
+        conn = db_manager.get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT drone_id FROM drones;")
+        rows = cursor.fetchall()
+        for row in rows:
+            drone_id = row[0]
+            # Use drones_lock when editing active_drones
+            with drones_lock:
+                if drone_id not in active_drones:
+                    active_drones[drone_id] = {
+                        "latest_raw_frame": b"",
+                        "latest_overlay_frame": b"",
+                        "latest_drone_coords": {"lat": 0.0, "lon": 0.0},
+                        "local_webcam_mode": False,
+                        "last_frame_time": 0.0,
+                        "edge_rendering_active": False,
+                        "subscribed_clients": set(),
+                        "yolo_thread": None,
+                        "yolo_thread_running": False,
+                        "raw_event": None,
+                        "overlay_event": None
+                    }
+        cursor.close()
+        conn.close()
+        logger.info("Loaded {} registered drones from database.".format(len(rows)))
+    except Exception as e:
+        logger.error("Error pre-populating drones from database: {}".format(e))
+
 def get_or_create_drone(drone_id: str):
     """
     Retrieves or initializes a dynamic state registry block for a specific drone_id.
@@ -1309,6 +1341,9 @@ async def startup_event():
     raw_frame_event = asyncio.Event()
     overlay_frame_event = asyncio.Event()
 
+    # Pre-populate registered drones from database
+    load_drones_from_db()
+
     #  Load YOLO model 
     # Priority: custom trained weights  generic YOLOv8n placeholder
     custom_weights = Path(__file__).resolve().parent.parent.parent / "models" / "weights" / "best.pt"
@@ -1804,6 +1839,119 @@ def get_flight_config(request: Request):
     if not user:
         raise HTTPException(status_code=401, detail="Unauthorized")
     return flight_config
+
+
+# ============================================================
+# FLEET MANAGEMENT — Register, List & Delete Drones
+# ============================================================
+
+@app.get("/api/drones")
+def list_drones(request: Request):
+    """
+    WHAT: REST endpoint returning all registered drones in the database.
+    WHY:  The dashboard Channel selector needs to populate the drone choices.
+    """
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    conn = db_manager.get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT drone_id, drone_name, rtmp_stream_key, status FROM drones ORDER BY id ASC;")
+        rows = cursor.fetchall()
+        drones_list = []
+        for r in rows:
+            drones_list.append({
+                "drone_id": r[0],
+                "drone_name": r[1],
+                "rtmp_stream_key": r[2] or r[0], # fallback to drone_id
+                "status": r[3]
+            })
+        return drones_list
+    except Exception as e:
+        logger.error("Error listing drones: {}".format(e))
+        raise HTTPException(status_code=500, detail="Database error while listing drones")
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.post("/api/drones")
+async def register_drone(request: Request, data: dict):
+    """
+    WHAT: Registers a new drone in the fleet database.
+    WHY:  Allows admins/operators to add custom drones dynamically.
+    """
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    drone_id = data.get("drone_id", "").strip()
+    drone_name = data.get("drone_name", "").strip()
+    
+    if not drone_id or not drone_name:
+        raise HTTPException(status_code=400, detail="drone_id and drone_name are required")
+        
+    # Generate unique secure stream key from drone_id
+    rtmp_stream_key = drone_id
+    
+    conn = db_manager.get_connection()
+    cursor = conn.cursor()
+    try:
+        # Check if drone_id already exists
+        cursor.execute("SELECT COUNT(*) FROM drones WHERE drone_id = %s;" if db_manager.db_type == "postgresql" else "SELECT COUNT(*) FROM drones WHERE drone_id = ?;", (drone_id,))
+        if cursor.fetchone()[0] > 0:
+            raise HTTPException(status_code=400, detail="Drone ID already registered")
+            
+        # Insert
+        q = "INSERT INTO drones (drone_id, drone_name, rtmp_stream_key, status) VALUES (%s, %s, %s, %s);" if db_manager.db_type == "postgresql" else "INSERT INTO drones (drone_id, drone_name, rtmp_stream_key, status) VALUES (?, ?, ?, ?);"
+        cursor.execute(q, (drone_id, drone_name, rtmp_stream_key, "offline"))
+        conn.commit()
+        
+        # Add to active_drones in-memory registry
+        get_or_create_drone(drone_id)
+        
+        logger.info("Registered new drone: {} ({})".format(drone_name, drone_id))
+        return {"success": True, "drone_id": drone_id, "rtmp_stream_key": rtmp_stream_key}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Error registering drone: {}".format(e))
+        raise HTTPException(status_code=500, detail="Database error while registering drone")
+    finally:
+        cursor.close()
+        conn.close()
+
+@app.delete("/api/drones/{drone_id}")
+def delete_drone(request: Request, drone_id: str):
+    """
+    WHAT: Deletes/unregisters a drone from the fleet.
+    WHY:  Operators need to retire or remove old assets.
+    """
+    user = get_session_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+        
+    conn = db_manager.get_connection()
+    cursor = conn.cursor()
+    try:
+        q = "DELETE FROM drones WHERE drone_id = %s;" if db_manager.db_type == "postgresql" else "DELETE FROM drones WHERE drone_id = ?;"
+        cursor.execute(q, (drone_id,))
+        conn.commit()
+        
+        # Clean up in-memory registry if present
+        with drones_lock:
+            if drone_id in active_drones:
+                del active_drones[drone_id]
+                
+        logger.info("Deleted drone: {}".format(drone_id))
+        return {"success": True}
+    except Exception as e:
+        logger.error("Error deleting drone: {}".format(e))
+        raise HTTPException(status_code=500, detail="Database error while deleting drone")
+    finally:
+        cursor.close()
+        conn.close()
 
 
 # ============================================================
