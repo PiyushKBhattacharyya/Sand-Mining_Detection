@@ -81,10 +81,21 @@ last_webcam_frame_time = 0.0
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+from fastapi.middleware.cors import CORSMiddleware
+
 app = FastAPI(
     title="Illegal Sand Mining Drone Surveillance Server",
     description="Real-time Edge-Cloud Pipeline with Dual Dashboard feeds and spatial queries",
     root_path=os.getenv("ROOT_PATH", "")
+)
+
+# Enable CORS for all origins to support decoupled frontend hosting (Vercel)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 #  Video source config 

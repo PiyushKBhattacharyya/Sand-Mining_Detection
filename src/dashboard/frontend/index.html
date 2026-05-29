@@ -1359,11 +1359,22 @@
     <!--  JAVASCRIPT (UNCHANGED LOGIC)  -->
     <script>
         // Dynamic subpath base path detection
-        const BASE_PATH = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+        const ORIGINAL_SUBPATH = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+
+        // Smart dynamic resolver for decoupled API queries & streaming
+        // Auto-detects if running on Vercel or local mock container, otherwise resolves to the hosting domain root path.
+        const isDecoupled = window.location.hostname.includes('vercel') || 
+                            window.location.hostname.includes('github') ||
+                            (window.location.hostname === 'localhost' && window.location.port !== '8000');
+        const BACKEND_URL = isDecoupled ? 'https://sandmining.nielitbhubaneswar.in/' : window.location.origin + ORIGINAL_SUBPATH;
+        const WS_BACKEND_URL = BACKEND_URL.replace('http://', 'ws://').replace('https://', 'wss://');
+
+        // Map all dynamic API calls to resolve to the absolute BACKEND_URL automatically
+        const BASE_PATH = BACKEND_URL;
 
         // Bind dynamic video streaming URLs
-        document.getElementById('img-stream-raw').src = BASE_PATH + 'stream/raw';
-        document.getElementById('img-stream-overlay').src = BASE_PATH + 'stream/overlay';
+        document.getElementById('img-stream-raw').src = BACKEND_URL + 'stream/raw';
+        document.getElementById('img-stream-overlay').src = BACKEND_URL + 'stream/overlay';
 
 
 
@@ -1805,8 +1816,7 @@
         })();
 
         //  WebSocket 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}${BASE_PATH}ws`;
+        const wsUrl = WS_BACKEND_URL + 'ws';
         let ws;
 
         // Update styling of all drone markers on active channel swap
