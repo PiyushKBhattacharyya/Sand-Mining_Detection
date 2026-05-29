@@ -1358,6 +1358,13 @@
 
     <!--  JAVASCRIPT (UNCHANGED LOGIC)  -->
     <script>
+        // Global Fetch interceptor to automatically include session cookies in cross-origin requests
+        const originalFetch = window.fetch;
+        window.fetch = function(url, options = {}) {
+            options.credentials = 'include';
+            return originalFetch(url, options);
+        };
+
         // Dynamic subpath base path detection
         const ORIGINAL_SUBPATH = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
 

@@ -314,6 +314,13 @@
     </div>
 
     <script>
+        // Global Fetch interceptor to automatically include session cookies in cross-origin requests
+        const originalFetch = window.fetch;
+        window.fetch = function(url, options = {}) {
+            options.credentials = 'include';
+            return originalFetch(url, options);
+        };
+
         const loginForm = document.getElementById('login-form');
         const registerForm = document.getElementById('register-form');
         const usernameInput = document.getElementById('username');

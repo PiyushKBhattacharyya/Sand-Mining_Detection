@@ -89,10 +89,14 @@ app = FastAPI(
     root_path=os.getenv("ROOT_PATH", "")
 )
 
-# Enable CORS for all origins to support decoupled frontend hosting (Vercel)
+# Enable CORS for specific origins and dynamic wildcards to support decoupled frontend hosting (Vercel) with credentials
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://sand-mining-detection.vercel.app",
+        "https://dashboard.sandmining.nielitbhubaneswar.in"
+    ],
+    allow_origin_regex="https://.*\\.vercel\\.app|http://localhost:.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -2379,13 +2383,15 @@ async def login(request: Request, response: Response, payload: dict):
         "role": role
     }
     
+    # Dynamic secure cookie setting for cross-origin authentication
+    is_secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
     response.set_cookie(
         key="session_id",
         value=session_id,
         httponly=True,
         max_age=3600 * 24, # 24 hours
-        samesite="lax",
-        secure=False
+        samesite="none" if is_secure else "lax",
+        secure=is_secure
     )
     
     return {"status": "success", "username": username, "role": role}
@@ -2464,13 +2470,15 @@ async def register(request: Request, response: Response, payload: dict):
         "role": "operator"
     }
     
+    # Dynamic secure cookie setting for cross-origin authentication
+    is_secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
     response.set_cookie(
         key="session_id",
         value=session_id,
         httponly=True,
         max_age=3600 * 24, # 24 hours
-        samesite="lax",
-        secure=False
+        samesite="none" if is_secure else "lax",
+        secure=is_secure
     )
     
     return {"status": "success", "username": username, "role": "operator"}
@@ -2480,7 +2488,12 @@ async def logout(request: Request, response: Response):
     session_id = request.cookies.get("session_id")
     if session_id in ACTIVE_SESSIONS:
         del ACTIVE_SESSIONS[session_id]
-    response.delete_cookie("session_id")
+    is_secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+    response.delete_cookie(
+        "session_id",
+        samesite="none" if is_secure else "lax",
+        secure=is_secure
+    )
     return {"status": "success"}
 
 @app.get("/api/auth/status")
