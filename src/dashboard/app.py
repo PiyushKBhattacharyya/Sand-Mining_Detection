@@ -100,9 +100,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://sand-mining-detection.vercel.app",
+        "https://sandmining-dashboard.nielitbhubaneswar.in",
         "https://dashboard.sandmining.nielitbhubaneswar.in"
     ],
-    allow_origin_regex="https://.*\\.vercel\\.app|http://localhost:.*",
+    allow_origin_regex="https://.*\\.vercel\\.app|https://.*\\.nielitbhubaneswar\\.in|http://localhost:.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
