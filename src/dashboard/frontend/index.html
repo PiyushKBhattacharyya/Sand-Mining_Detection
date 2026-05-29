@@ -1842,23 +1842,16 @@
         const wsUrl = WS_BACKEND_URL + 'ws';
         let ws;
 
-        // Get a stable, vibrant premium color based on drone ID
+        // Get a stable, vibrant premium color based on drone ID (completely unique HSL color for unlimited drones)
         function getDroneColor(id) {
-            if (id === 'default_drone') return '#3b82f6'; // Premium Blue
-            const colors = [
-                '#a855f7', // Vivid Purple
-                '#10b981', // Emerald Green
-                '#f59e0b', // Amber/Gold
-                '#ec4899', // Hot Pink
-                '#06b6d4', // Cyan
-                '#f97316'  // Orange
-            ];
+            if (id === 'default_drone') return '#3b82f6'; // Keep default drone Premium Blue
             let hash = 0;
             for (let i = 0; i < id.length; i++) {
                 hash = id.charCodeAt(i) + ((hash << 5) - hash);
             }
-            const index = Math.abs(hash) % colors.length;
-            return colors[index];
+            // Generate a unique hue (0 - 360) and keep Saturation and Lightness constant for maximum premium vibrancy
+            const hue = Math.abs(hash) % 360;
+            return `hsl(${hue}, 85%, 60%)`;
         }
 
         // Update styling of all drone markers on active channel swap
