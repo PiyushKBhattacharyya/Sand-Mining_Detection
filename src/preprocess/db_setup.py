@@ -163,6 +163,7 @@ class DatabaseManager:
             drone_name VARCHAR(100) NOT NULL,
             rtmp_stream_key VARCHAR(100) UNIQUE,
             status VARCHAR(50) DEFAULT 'offline',
+            processing_mode VARCHAR(50) DEFAULT 'cloud',
             created_at {t_timestamptz} NOT NULL DEFAULT {now_default}
         );
         """
@@ -193,6 +194,15 @@ class DatabaseManager:
                     logger.info(" Migrating local SQLite: adding email column to users table...")
                     cursor.execute("ALTER TABLE users ADD COLUMN email VARCHAR(255);")
                     conn.commit()
+
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='drones';")
+            if cursor.fetchone():
+                cursor.execute("PRAGMA table_info(drones);")
+                dr_columns = [col[1] for col in cursor.fetchall()]
+                if "processing_mode" not in dr_columns:
+                    logger.info(" Migrating local SQLite: adding processing_mode column to drones table...")
+                    cursor.execute("ALTER TABLE drones ADD COLUMN processing_mode VARCHAR(50) DEFAULT 'cloud';")
+                    conn.commit()
         else:
             try:
                 cursor.execute("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS evidence_image_blob BYTEA;")
@@ -207,6 +217,13 @@ class DatabaseManager:
             except Exception as e:
                 conn.rollback()
                 logger.debug(f"Postgres migration check for users email: {e}")
+
+            try:
+                cursor.execute("ALTER TABLE drones ADD COLUMN IF NOT EXISTS processing_mode VARCHAR(50) DEFAULT 'cloud';")
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                logger.debug(f"Postgres migration check for drones processing_mode: {e}")
 
         # Seed default admin user if users table is empty
         cursor.execute("SELECT COUNT(*) FROM users;")

@@ -694,10 +694,11 @@ def load_drones_from_db():
     try:
         conn = db_manager.get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT drone_id FROM drones;")
+        cursor.execute("SELECT drone_id, processing_mode FROM drones;")
         rows = cursor.fetchall()
         for row in rows:
             drone_id = row[0]
+            processing_mode = row[1] if len(row) > 1 and row[1] else "cloud"
             # Use drones_lock when editing active_drones
             with drones_lock:
                 if drone_id not in active_drones:
@@ -707,7 +708,8 @@ def load_drones_from_db():
                         "latest_drone_coords": {"lat": 0.0, "lon": 0.0},
                         "local_webcam_mode": False,
                         "last_frame_time": 0.0,
-                        "edge_rendering_active": False,
+                        "processing_mode": processing_mode,
+                        "edge_rendering_active": (processing_mode == "edge"),
                         "subscribed_clients": set(),
                         "yolo_thread": None,
                         "yolo_thread_running": False,
@@ -727,13 +729,27 @@ def get_or_create_drone(drone_id: str):
     global active_drones
     with drones_lock:
         if drone_id not in active_drones:
+            processing_mode = "cloud"
+            try:
+                conn = db_manager.get_connection()
+                cursor = conn.cursor()
+                cursor.execute("SELECT processing_mode FROM drones WHERE drone_id = %s;" if db_manager.db_type == "postgresql" else "SELECT processing_mode FROM drones WHERE drone_id = ?;", (drone_id,))
+                row = cursor.fetchone()
+                if row:
+                    processing_mode = row[0] or "cloud"
+                cursor.close()
+                conn.close()
+            except Exception as e:
+                logger.debug(f"Error reading processing_mode for {drone_id}: {e}")
+
             active_drones[drone_id] = {
                 "latest_raw_frame": b"",
                 "latest_overlay_frame": b"",
                 "latest_drone_coords": {"lat": 0.0, "lon": 0.0},
                 "local_webcam_mode": False,
                 "last_frame_time": 0.0,
-                "edge_rendering_active": False,  # If True, bypass server-side YOLO!
+                "processing_mode": processing_mode,
+                "edge_rendering_active": (processing_mode == "edge"),  # If True, bypass server-side YOLO!
                 "subscribed_clients": set(),     # WebSocket connections subscribed to this drone
                 "yolo_thread": None,
                 "yolo_thread_running": False,
@@ -1858,7 +1874,7 @@ def list_drones(request: Request):
     conn = db_manager.get_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT drone_id, drone_name, rtmp_stream_key, status FROM drones ORDER BY id ASC;")
+        cursor.execute("SELECT drone_id, drone_name, rtmp_stream_key, status, processing_mode FROM drones ORDER BY id ASC;")
         rows = cursor.fetchall()
         drones_list = []
         for r in rows:
@@ -1866,7 +1882,8 @@ def list_drones(request: Request):
                 "drone_id": r[0],
                 "drone_name": r[1],
                 "rtmp_stream_key": r[2] or r[0], # fallback to drone_id
-                "status": r[3]
+                "status": r[3],
+                "processing_mode": r[4] if len(r) > 4 and r[4] else "cloud"
             })
         return drones_list
     except Exception as e:
@@ -1888,6 +1905,10 @@ async def register_drone(request: Request, data: dict):
     
     drone_id = data.get("drone_id", "").strip()
     drone_name = data.get("drone_name", "").strip()
+    processing_mode = data.get("processing_mode", "cloud").strip().lower()
+    
+    if processing_mode not in ("cloud", "edge"):
+        processing_mode = "cloud"
     
     if not drone_id or not drone_name:
         raise HTTPException(status_code=400, detail="drone_id and drone_name are required")
@@ -1904,15 +1925,15 @@ async def register_drone(request: Request, data: dict):
             raise HTTPException(status_code=400, detail="Drone ID already registered")
             
         # Insert
-        q = "INSERT INTO drones (drone_id, drone_name, rtmp_stream_key, status) VALUES (%s, %s, %s, %s);" if db_manager.db_type == "postgresql" else "INSERT INTO drones (drone_id, drone_name, rtmp_stream_key, status) VALUES (?, ?, ?, ?);"
-        cursor.execute(q, (drone_id, drone_name, rtmp_stream_key, "offline"))
+        q = "INSERT INTO drones (drone_id, drone_name, rtmp_stream_key, status, processing_mode) VALUES (%s, %s, %s, %s, %s);" if db_manager.db_type == "postgresql" else "INSERT INTO drones (drone_id, drone_name, rtmp_stream_key, status, processing_mode) VALUES (?, ?, ?, ?, ?);"
+        cursor.execute(q, (drone_id, drone_name, rtmp_stream_key, "offline", processing_mode))
         conn.commit()
         
         # Add to active_drones in-memory registry
         get_or_create_drone(drone_id)
         
-        logger.info("Registered new drone: {} ({})".format(drone_name, drone_id))
-        return {"success": True, "drone_id": drone_id, "rtmp_stream_key": rtmp_stream_key}
+        logger.info("Registered new drone: {} ({}) with processing mode {}".format(drone_name, drone_id, processing_mode))
+        return {"success": True, "drone_id": drone_id, "rtmp_stream_key": rtmp_stream_key, "processing_mode": processing_mode}
     except HTTPException:
         raise
     except Exception as e:

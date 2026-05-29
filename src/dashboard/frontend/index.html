@@ -785,7 +785,7 @@
 
                         <!-- AI detection feed -->
                         <div class="card flex-col" style="position:relative;">
-                            <span class="feed-label">AI Detection Feed</span>
+                            <span class="feed-label feed-label-ai">AI Detection Feed</span>
                             <span class="feed-badge feed-badge-ai"> DETECTING</span>
                             <div
                                 style="flex:1; background:#111827; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden;">
@@ -1337,6 +1337,7 @@
         let flightTrailsMap = {};
         let activeDronesRegistry = new Set(['default_drone']);
         let dronesNameMap = { 'default_drone': 'Default Drone' };
+        let dronesModeMap = { 'default_drone': 'cloud' };
         let currentDroneId = 'default_drone';
 
         function updateRtmpIngestUrl() {
@@ -1345,6 +1346,51 @@
                 const streamKey = currentDroneId === 'default_drone' ? 'drone' : currentDroneId;
                 const host = window.location.hostname;
                 rtmpEl.textContent = `rtmp://${host}:1935/live/${streamKey}`;
+            }
+        }
+
+        function updateProcessingModeUi() {
+            const mode = dronesModeMap[currentDroneId] || 'cloud';
+            const aiBadge = document.querySelector('.feed-badge-ai');
+            const aiLabel = document.querySelector('.feed-label-ai');
+            const aiStandbyH3 = document.querySelector('#standby-overlay-ai h3');
+            const aiStandbyP = document.querySelector('#standby-overlay-ai p');
+            const aiStandbySpan = document.querySelector('#standby-overlay-ai span[style*="uppercase"]');
+
+            if (mode === 'edge') {
+                if (aiBadge) {
+                    aiBadge.textContent = ' EDGE ACTIVE';
+                    aiBadge.style.background = '#8b5cf6'; // Violet for Edge
+                }
+                if (aiLabel) {
+                    aiLabel.textContent = 'Edge AI Detection Feed';
+                }
+                if (aiStandbySpan) {
+                    aiStandbySpan.textContent = 'Edge-AI Standby';
+                }
+                if (aiStandbyH3) {
+                    aiStandbyH3.textContent = 'Waiting for Edge Feed';
+                }
+                if (aiStandbyP) {
+                    aiStandbyP.textContent = 'High-efficiency Edge-AI is active. Your Jetson Nano is pre-rendering YOLO overlays directly on the drone hardware.';
+                }
+            } else {
+                if (aiBadge) {
+                    aiBadge.textContent = ' DETECTING';
+                    aiBadge.style.background = '#ef4444'; // Red for server YOLO
+                }
+                if (aiLabel) {
+                    aiLabel.textContent = 'AI Detection Feed';
+                }
+                if (aiStandbySpan) {
+                    aiStandbySpan.textContent = 'AI Engine Standby';
+                }
+                if (aiStandbyH3) {
+                    aiStandbyH3.textContent = 'Waiting for Live Video';
+                }
+                if (aiStandbyP) {
+                    aiStandbyP.textContent = 'Once the drone stream starts, the YOLO detection engine will automatically run object recognition overlays here.';
+                }
             }
         }
 
@@ -1366,6 +1412,7 @@
                     data.forEach(d => {
                         activeDronesRegistry.add(d.drone_id);
                         dronesNameMap[d.drone_id] = d.drone_name;
+                        dronesModeMap[d.drone_id] = d.processing_mode || 'cloud';
                         
                         const opt = document.createElement('option');
                         opt.value = d.drone_id;
@@ -1381,6 +1428,7 @@
                     }
                     
                     updateRtmpIngestUrl();
+                    updateProcessingModeUi();
                 })
                 .catch(err => console.error("Error fetching registered drones:", err));
         }
@@ -1401,6 +1449,7 @@
             event.preventDefault();
             const droneId = document.getElementById('modal-drone-id').value.trim();
             const droneName = document.getElementById('modal-drone-name').value.trim();
+            const processingMode = document.getElementById('modal-drone-mode').value;
             const errorEl = document.getElementById('modal-error-msg');
             
             if (!droneId || !droneName) return;
@@ -1408,7 +1457,7 @@
             fetch(BASE_PATH + 'api/drones', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ drone_id: droneId, drone_name: droneName })
+                body: JSON.stringify({ drone_id: droneId, drone_name: droneName, processing_mode: processingMode })
             })
             .then(r => {
                 if (!r.ok) {
@@ -1660,6 +1709,7 @@
             currentDroneId = nextDroneId;
             updateDroneMarkerStyles();
             updateRtmpIngestUrl();
+            updateProcessingModeUi();
 
             // Synchronize HUD stream source text input field
             const sourceInput = document.getElementById('stream-source-input');
@@ -2590,9 +2640,16 @@
                     <label style="display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; tracking: 0.05em; color: #9ca3af; margin-bottom: 6px; font-family:'Inter',sans-serif;">Drone Name / Call Sign *</label>
                     <input type="text" id="modal-drone-name" placeholder="e.g. East River Patrol" required style="width: 100%; background: #1f2937; border: 1px solid #4b5563; color: #f3f4f6; border-radius: 8px; padding: 10px 12px; font-size: 13px; outline: none; transition: border-color 0.2s;" onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#4b5563'">
                 </div>
-                <div style="margin-bottom: 20px;">
+                <div style="margin-bottom: 16px;">
                     <label style="display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; tracking: 0.05em; color: #9ca3af; margin-bottom: 6px; font-family:'Inter',sans-serif;">Unique Drone ID *</label>
                     <input type="text" id="modal-drone-id" placeholder="e.g. drone_101" required pattern="^[a-zA-Z0-9_]+$" style="width: 100%; background: #1f2937; border: 1px solid #4b5563; color: #f3f4f6; border-radius: 8px; padding: 10px 12px; font-size: 13px; outline: none; transition: border-color 0.2s;" onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#4b5563'">
+                </div>
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; tracking: 0.05em; color: #9ca3af; margin-bottom: 6px; font-family:'Inter',sans-serif;">AI Processing Location *</label>
+                    <select id="modal-drone-mode" required style="width: 100%; background: #1f2937; border: 1px solid #4b5563; color: #f3f4f6; border-radius: 8px; padding: 10px 12px; font-size: 13px; outline: none; transition: border-color 0.2s;" onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#4b5563'">
+                        <option value="cloud">Cloud AI </option>
+                        <option value="edge">Edge AI </option>
+                    </select>
                 </div>
                 
                 <div id="modal-error-msg" style="display: none; color: #f87171; font-size: 12px; font-weight: 600; margin-bottom: 16px; background: rgba(239, 68, 68, 0.1); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(239, 68, 68, 0.2); font-family:'Inter',sans-serif;"></div>
