@@ -1,0 +1,64 @@
+# Implementation Plan: Performance Optimization (Area 1) & Advanced Spatial Analytics / SAHI (Area 3)
+
+This plan outlines the system-level optimizations and algorithmic improvements required to reduce execution latency, throttle heavy SQLite database commits, and introduce high-altitude small object detection (SAHI) without overloading the edge or backend CPUs.
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> **Key Architectural Choices & Impact:**
+> 1. **ONNX Runtime Migration:** We will configure the backend to use `onnxruntime` instead of PyTorch (`ultralytics` native inference) for CPU execution. ONNX Runtime provides significant speedups on CPU.
+> 2. **Slicing Aided Hyper Inference (SAHI) Overhead:** Sliced inference is computationally heavy since it runs YOLO multiple times per frame. We will implement **Dynamic SAHI**—it will only trigger when the drone's altitude exceeds a pre-defined threshold (e.g., 50 meters) where objects appear tiny.
+> 3. **SQLite Write Batching:** To avoid thread pool exhaustion, we will batch database transactions every 5 seconds rather than committing at 3 Hz.
+
+---
+
+## Open Questions
+
+> [!NOTE]
+> 1. **Is `onnxruntime` already installed in the environment, or should we add it to `requirements.txt`?**
+> 2. **What is the standard lens field of view (FOV) of the drone camera?** (This influences the coordinate mapping math in `gps_projector.py`). We will assume a DJI Zenmuse default of 84° FOV if not specified.
+
+---
+
+## Proposed Changes
+
+### Component 1: Performance Optimization & Latency Reduction (Area 1)
+
+#### [MODIFY] [app.py](file:///d:/Projects/Sand-Mining_Detection/src/dashboard/app.py)
+* **SQLite Transaction Batching:** Refactor the simulated telemetry log insertion logic. Instead of executing database insert and commit statements directly at 3 Hz, append telemetry logs to a thread-safe in-memory buffer (`telemetry_buffer = []`).
+* **Asynchronous Flusher:** Implement an async background task `_flush_telemetry_db_loop` that runs every 5 seconds to bulk-insert buffered telemetry records and commit them in a single transaction.
+* **Clustering Throttle:** Decouple `ClusterEngine.cluster_detections` from the high-frequency 3 Hz telemetry loop. Run it as an independent async task every 3 seconds to keep CPU cycles cool.
+* **YOLO Image Size Auto-throttling:** Automatically set `imgsz=640` for normal altitudes and reserve `imgsz=1280` only during active high-altitude flights.
+
+---
+
+### Component 2: Advanced Spatial Analytics & Small Object Detection (Area 3)
+
+#### [NEW] [sahi_detector.py](file:///d:/Projects/Sand-Mining_Detection/src/detection/sahi_detector.py)
+* **Implement Slicing Logics:** Create a utility that slices a high-resolution input frame (e.g., `1920x1080`) into overlapping slices (e.g., `640x640` with `20%` overlap).
+* **Patch Inference & Merge:** Execute YOLO on each slice independently, then shift the bounding box coordinates back to the global frame. Merge overlapping boxes using Non-Maximum Suppression (NMS) or Intersection-over-Union (IoU) criteria to resolve redundant detections.
+* **Gated Execution:** Enable SAHI dynamically based on drone altitude inputs.
+
+#### [MODIFY] [gps_projector.py](file:///d:/Projects/Sand-Mining_Detection/src/detection/gps_projector.py)
+* **Terrain & Elevation Corrections:** Add terrain elevation parameter offsets to the projection mathematical formulas to adjust coordinate projections based on land contour elevation differences.
+
+---
+
+## Verification Plan
+
+### Automated Tests
+* Create a dedicated unit test script `scratch/test_performance.py` to:
+  * Compare standard PyTorch inference time vs. ONNX Runtime inference time.
+  * Measure database write throughput before and after batching.
+  * Run sliced inference over a high-resolution test frame and assert that merged boxes match ground-truth positions.
+
+### Manual Verification
+* Run the surveillance system in simulation mode:
+  ```powershell
+  python main.py all
+  ```
+* Open the Dashboard at `http://localhost:8000` and verify:
+  * The map markers and telemetry updates render smoothly with zero stutter.
+  * Spatial alerts drop exactly on coordinates and generate PDF summaries correctly.
