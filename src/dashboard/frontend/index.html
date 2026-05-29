@@ -2571,7 +2571,7 @@
             fetch(BASE_PATH + 'api/auth/status')
                 .then(res => {
                     if (!res.ok) {
-                        window.location.href = BASE_PATH + 'login';
+                        window.location.href = ORIGINAL_SUBPATH + 'login';
                         throw new Error('Not authenticated');
                     }
                     return res.json();
@@ -2601,7 +2601,7 @@
             btnLogout.addEventListener('click', () => {
                 fetch(BASE_PATH + 'api/auth/logout', { method: 'POST' })
                     .then(() => {
-                        window.location.href = BASE_PATH + 'login';
+                        window.location.href = ORIGINAL_SUBPATH + 'login';
                     })
                     .catch(err => console.error('Logout failed:', err));
             });

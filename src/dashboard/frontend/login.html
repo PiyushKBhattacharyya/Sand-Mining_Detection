@@ -349,7 +349,18 @@
             portalSubtitle.textContent = 'Operator Login Portal';
         });
 
-        const BASE_PATH = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+        // Dynamic subpath base path detection
+        const ORIGINAL_SUBPATH = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1);
+
+        // Smart dynamic resolver for decoupled API queries & streaming
+        // Auto-detects if running on Vercel or local mock container, otherwise resolves to the hosting domain root path.
+        const isDecoupled = window.location.hostname.includes('vercel') || 
+                            window.location.hostname.includes('github') ||
+                            (window.location.hostname === 'localhost' && window.location.port !== '8000');
+        const BACKEND_URL = isDecoupled ? 'https://sandmining.nielitbhubaneswar.in/' : window.location.origin + ORIGINAL_SUBPATH;
+
+        // Map all dynamic API calls to resolve to the absolute BACKEND_URL automatically
+        const BASE_PATH = BACKEND_URL;
 
         // Handle Login Submission
         loginForm.addEventListener('submit', async (e) => {
@@ -377,7 +388,8 @@
                     throw new Error(data.detail || 'Authentication failed');
                 }
 
-                window.location.href = BASE_PATH;
+                // Redirect to the frontend homepage of the current origin
+                window.location.href = window.location.origin + ORIGINAL_SUBPATH;
 
             } catch (err) {
                 btnSpinner.style.display = 'none';
@@ -418,8 +430,8 @@
                     throw new Error(data.detail || 'Registration failed');
                 }
 
-                // Redirect to dashboard on successful registration (immediately logged in)
-                window.location.href = BASE_PATH;
+                // Redirect to the frontend homepage of the current origin
+                window.location.href = window.location.origin + ORIGINAL_SUBPATH;
 
             } catch (err) {
                 btnRegSpinner.style.display = 'none';
