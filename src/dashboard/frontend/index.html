@@ -1343,7 +1343,8 @@
             const rtmpEl = document.getElementById('rtmp-ingest-url');
             if (rtmpEl) {
                 const streamKey = currentDroneId === 'default_drone' ? 'drone' : currentDroneId;
-                rtmpEl.textContent = `rtmp://187.127.142.58:1935/live/${streamKey}`;
+                const host = window.location.hostname;
+                rtmpEl.textContent = `rtmp://${host}:1935/live/${streamKey}`;
             }
         }
 
@@ -1660,6 +1661,14 @@
             updateDroneMarkerStyles();
             updateRtmpIngestUrl();
 
+            // Synchronize HUD stream source text input field
+            const sourceInput = document.getElementById('stream-source-input');
+            if (sourceInput) {
+                const streamKey = currentDroneId === 'default_drone' ? 'drone' : currentDroneId;
+                const host = window.location.hostname;
+                sourceInput.value = `rtmp://${host}:1935/live/${streamKey}`;
+            }
+
             // Hot-swap stream sources
             document.getElementById('img-stream-raw').src = BASE_PATH + 'stream/raw?drone_id=' + encodeURIComponent(currentDroneId);
             document.getElementById('img-stream-overlay').src = BASE_PATH + 'stream/overlay?drone_id=' + encodeURIComponent(currentDroneId);
@@ -1722,12 +1731,6 @@
                     }
                 } else if (data.type === 'stream_status') {
                     const isSynthetic = data.payload.use_synthetic_video;
-                    const rtmpUrl = data.payload.video_source;
-                    
-                    const ingestCode = document.getElementById('rtmp-ingest-url');
-                    if (ingestCode && rtmpUrl) {
-                        ingestCode.textContent = rtmpUrl;
-                    }
                     
                     const overlayRaw = document.getElementById('standby-overlay');
                     const overlayAI = document.getElementById('standby-overlay-ai');
