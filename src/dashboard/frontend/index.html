@@ -1358,10 +1358,21 @@
 
     <!--  JAVASCRIPT (UNCHANGED LOGIC)  -->
     <script>
-        // Global Fetch interceptor to automatically include session cookies in cross-origin requests
+        // Global Fetch interceptor to automatically include session cookies and tokens in cross-origin requests
         const originalFetch = window.fetch;
         window.fetch = function(url, options = {}) {
             options.credentials = 'include';
+            
+            // Inject dynamic token header to bypass browser third-party cookie blocking
+            const sessionId = localStorage.getItem('session_id');
+            if (sessionId) {
+                options.headers = options.headers || {};
+                if (options.headers instanceof Headers) {
+                    options.headers.set('Authorization', 'Bearer ' + sessionId);
+                } else {
+                    options.headers['Authorization'] = 'Bearer ' + sessionId;
+                }
+            }
             return originalFetch(url, options);
         };
 
@@ -2583,6 +2594,7 @@
             fetch(BASE_PATH + 'api/auth/status')
                 .then(res => {
                     if (!res.ok) {
+                        localStorage.removeItem('session_id');
                         window.location.href = ORIGINAL_SUBPATH + 'login';
                         throw new Error('Not authenticated');
                     }
@@ -2613,6 +2625,7 @@
             btnLogout.addEventListener('click', () => {
                 fetch(BASE_PATH + 'api/auth/logout', { method: 'POST' })
                     .then(() => {
+                        localStorage.removeItem('session_id');
                         window.location.href = ORIGINAL_SUBPATH + 'login';
                     })
                     .catch(err => console.error('Logout failed:', err));

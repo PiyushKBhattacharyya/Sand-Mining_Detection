@@ -61,6 +61,12 @@ ACTIVE_SESSIONS = {}
 
 def get_session_user(request):
     session_id = request.cookies.get("session_id")
+    
+    # Fallback to Authorization: Bearer <session_id> to bypass third-party cookie blocking
+    auth_header = request.headers.get("Authorization")
+    if not session_id and auth_header and auth_header.startswith("Bearer "):
+        session_id = auth_header.split(" ")[1]
+        
     if session_id and session_id in ACTIVE_SESSIONS:
         return ACTIVE_SESSIONS[session_id]
     return None
@@ -2394,7 +2400,7 @@ async def login(request: Request, response: Response, payload: dict):
         secure=is_secure
     )
     
-    return {"status": "success", "username": username, "role": role}
+    return {"status": "success", "username": username, "role": role, "session_id": session_id}
 
 ALLOWED_EMAIL_DOMAINS = [".gov", ".gov.in", ".edu", ".edu.in", ".ac.in", ".org", "gmail.com"]
 
@@ -2481,7 +2487,7 @@ async def register(request: Request, response: Response, payload: dict):
         secure=is_secure
     )
     
-    return {"status": "success", "username": username, "role": "operator"}
+    return {"status": "success", "username": username, "role": "operator", "session_id": session_id}
 
 @app.post("/api/auth/logout")
 async def logout(request: Request, response: Response):
