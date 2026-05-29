@@ -1381,9 +1381,9 @@
 
         // Smart dynamic resolver for decoupled API queries & streaming
         // Auto-detects if running on Vercel or local mock container, otherwise resolves to the hosting domain root path.
-        const isDecoupled = window.location.hostname.includes('vercel') || 
-                            window.location.hostname.includes('github') ||
-                            (window.location.hostname === 'localhost' && window.location.port !== '8000');
+        const isDecoupled = window.location.hostname !== 'sandmining.nielitbhubaneswar.in' && 
+                            window.location.hostname !== '187.127.142.58' &&
+                            !(window.location.hostname === 'localhost' && window.location.port === '8000');
         
         // Supports build-time Vercel injection of the CLOUD_URL environment variable
         const INJECTED_URL = '__CLOUD_URL__';
