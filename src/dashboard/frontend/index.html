@@ -673,17 +673,24 @@
                 <!-- Drone Selector -->
                 <div class="chip" style="background: rgba(96, 165, 250, 0.08); border-color: rgba(96, 165, 250, 0.15);">
                     <span style="color: #60a5fa; font-weight: 600; display: flex; align-items: center; gap: 4px;">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path
+                                d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z">
+                            </path>
                             <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
                             <line x1="12" y1="22.08" x2="12" y2="12"></line>
                         </svg>
                         Channel:
                     </span>
-                    <select id="drone-select" style="background: #111827; border: 1px solid #374151; color: #e5e7eb; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 600; outline: none; cursor: pointer; font-family: inherit;">
+                    <select id="drone-select"
+                        style="background: #111827; border: 1px solid #374151; color: #e5e7eb; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 600; outline: none; cursor: pointer; font-family: inherit;">
                         <option value="default_drone">Default Drone</option>
                     </select>
-                    <button id="btn-add-drone" style="margin-left: 6px; background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.3); color: #4ade80; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all 0.2s;" onmouseover="this.style.background='rgba(34,197,94,0.25)'" onmouseout="this.style.background='rgba(34,197,94,0.15)'">
+                    <button id="btn-add-drone"
+                        style="margin-left: 6px; background: rgba(34, 197, 94, 0.15); border: 1px solid rgba(34, 197, 94, 0.3); color: #4ade80; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 600; cursor: pointer; font-family: inherit; transition: all 0.2s;"
+                        onmouseover="this.style.background='rgba(34,197,94,0.25)'"
+                        onmouseout="this.style.background='rgba(34,197,94,0.15)'">
                         + Add
                     </button>
                 </div>
@@ -741,7 +748,7 @@
                 <!-- Left: Video feeds + filters -->
                 <div class="flex-col" style="gap:16px;">
                     <!-- Two video feeds side by side -->
-                    <div class="grid-2" style="flex:1;">
+                    <div id="video-feeds-container" class="grid-2" style="flex:1;">
                         <!-- Raw feed -->
                         <div class="card flex-col" style="position:relative;">
                             <span class="feed-label">Drone Camera</span>
@@ -752,27 +759,46 @@
                                     style="width:100%; height:100%; object-fit:cover; aspect-ratio:16/9;" />
 
                                 <!-- Beautiful HTML Glassmorphic Standby Overlay -->
-                                <div id="standby-overlay" style="display:none; position:absolute; inset:0; background:rgba(8, 12, 24, 0.95); z-index:10; flex-direction:column; align-items:center; justify-content:center; padding:16px; text-align:center;">
-                                    <div style="background:rgba(249, 115, 22, 0.08); border:1px solid rgba(249, 115, 22, 0.25); border-radius:12px; padding:18px; max-width:440px; box-shadow:0 10px 25px -5px rgba(0,0,0,0.5);">
-                                        <div style="display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:8px;">
-                                            <span style="display:inline-block; width:8px; height:8px; background:#f97316; border-radius:50%; box-shadow:0 0 10px #f97316; animation:pulse 1.5s infinite;"></span>
-                                            <span style="color:#fdba74; font-weight:700; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; font-family:'Inter',sans-serif;">Drone Feed Standby</span>
+                                <div id="standby-overlay"
+                                    style="display:none; position:absolute; inset:0; background:rgba(8, 12, 24, 0.95); z-index:10; flex-direction:column; align-items:center; justify-content:center; padding:16px; text-align:center;">
+                                    <div
+                                        style="background:rgba(249, 115, 22, 0.08); border:1px solid rgba(249, 115, 22, 0.25); border-radius:12px; padding:18px; max-width:440px; box-shadow:0 10px 25px -5px rgba(0,0,0,0.5);">
+                                        <div
+                                            style="display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:8px;">
+                                            <span
+                                                style="display:inline-block; width:8px; height:8px; background:#f97316; border-radius:50%; box-shadow:0 0 10px #f97316; animation:pulse 1.5s infinite;"></span>
+                                            <span
+                                                style="color:#fdba74; font-weight:700; font-size:12px; letter-spacing:0.06em; text-transform:uppercase; font-family:'Inter',sans-serif;">Drone
+                                                Feed Standby</span>
                                         </div>
-                                        <h3 style="color:#ffffff; font-size:17px; font-weight:600; margin-bottom:6px; margin-top:0; font-family:'Outfit','Inter',sans-serif;">Waiting for Video Connection</h3>
-                                        <p style="color:#9ca3af; font-size:12px; line-height:1.45; margin-bottom:14px; font-family:'Inter',sans-serif;">The live drone camera stream is currently offline.</p>
-                                        
+                                        <h3
+                                            style="color:#ffffff; font-size:17px; font-weight:600; margin-bottom:6px; margin-top:0; font-family:'Outfit','Inter',sans-serif;">
+                                            Waiting for Video Connection</h3>
+                                        <p id="raw-standby-desc"
+                                            style="color:#9ca3af; font-size:12px; line-height:1.45; margin-bottom:14px; font-family:'Inter',sans-serif;">
+                                            The live drone camera stream is currently offline.</p>
+
                                         <!-- Ingest URL display with interactive copy button -->
-                                        <div style="background:#1e293b; border-radius:8px; padding:10px; text-align:left; border:1px solid #334155; margin-bottom:14px;">
-                                            <span style="color:#64748b; font-size:10px; font-weight:600; text-transform:uppercase; display:block; margin-bottom:4px; font-family:'Inter',sans-serif; letter-spacing:0.02em;">RTMP Ingest Destination URL</span>
-                                            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
-                                                <code id="rtmp-ingest-url" style="color:#38bdf8; font-family:monospace; font-size:11px; word-break:break-all; flex:1;">rtmp://187.127.142.58:1935/live/drone</code>
-                                                <button onclick="window.copyIngestUrl(this)" style="background:#0284c7; border:none; color:white; border-radius:4px; padding:3px 8px; font-size:10px; cursor:pointer; font-weight:600; transition:all 0.2s; font-family:'Inter',sans-serif;">Copy</button>
+                                        <div
+                                            style="background:#1e293b; border-radius:8px; padding:10px; text-align:left; border:1px solid #334155; margin-bottom:14px;">
+                                            <span
+                                                style="color:#64748b; font-size:10px; font-weight:600; text-transform:uppercase; display:block; margin-bottom:4px; font-family:'Inter',sans-serif; letter-spacing:0.02em;">RTMP
+                                                Ingest Destination URL</span>
+                                            <div
+                                                style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                                                <code id="rtmp-ingest-url"
+                                                    style="color:#38bdf8; font-family:monospace; font-size:11px; word-break:break-all; flex:1;">rtmp://187.127.142.58:1935/live/drone</code>
+                                                <button onclick="window.copyIngestUrl(this)"
+                                                    style="background:#0284c7; border:none; color:white; border-radius:4px; padding:3px 8px; font-size:10px; cursor:pointer; font-weight:600; transition:all 0.2s; font-family:'Inter',sans-serif;">Copy</button>
                                             </div>
                                         </div>
 
-                                        <div style="text-align:left; color:#9ca3af; font-size:11.5px; line-height:1.45; font-family:'Inter',sans-serif;">
-                                            <strong style="color:#e2e8f0; display:block; margin-bottom:4px;">How to start streaming:</strong>
-                                            <ol style="margin:0; padding-left:14px; display:flex; flex-direction:column; gap:4px;">
+                                        <div id="raw-standby-instructions"
+                                            style="text-align:left; color:#9ca3af; font-size:11.5px; line-height:1.45; font-family:'Inter',sans-serif;">
+                                            <strong style="color:#e2e8f0; display:block; margin-bottom:4px;">How to
+                                                start streaming:</strong>
+                                            <ol
+                                                style="margin:0; padding-left:14px; display:flex; flex-direction:column; gap:4px;">
                                                 <li>Ensure the DJI Drone and Controller are Powered ON</li>
                                                 <li>Go to DJI Pilot App Settings -> Live Stream</li>
                                                 <li>Choose RTMP and paste the destination URL above</li>
@@ -793,14 +819,25 @@
                                     style="width:100%; height:100%; object-fit:cover; aspect-ratio:16/9;" />
 
                                 <!-- Sleek AI Engine Standby Overlay -->
-                                <div id="standby-overlay-ai" style="display:none; position:absolute; inset:0; background:rgba(8, 12, 24, 0.95); z-index:10; flex-direction:column; align-items:center; justify-content:center; padding:16px; text-align:center;">
-                                    <div style="background:rgba(148, 163, 184, 0.05); border:1px solid rgba(148, 163, 184, 0.15); border-radius:12px; padding:18px; max-width:360px;">
-                                        <div style="display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:6px;">
-                                            <span style="display:inline-block; width:6px; height:6px; background:#64748b; border-radius:50%;"></span>
-                                            <span style="color:#94a3b8; font-weight:700; font-size:11px; letter-spacing:0.06em; text-transform:uppercase; font-family:'Inter',sans-serif;">AI Engine Standby</span>
+                                <div id="standby-overlay-ai"
+                                    style="display:none; position:absolute; inset:0; background:rgba(8, 12, 24, 0.95); z-index:10; flex-direction:column; align-items:center; justify-content:center; padding:16px; text-align:center;">
+                                    <div
+                                        style="background:rgba(148, 163, 184, 0.05); border:1px solid rgba(148, 163, 184, 0.15); border-radius:12px; padding:18px; max-width:360px;">
+                                        <div
+                                            style="display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:6px;">
+                                            <span
+                                                style="display:inline-block; width:6px; height:6px; background:#64748b; border-radius:50%;"></span>
+                                            <span
+                                                style="color:#94a3b8; font-weight:700; font-size:11px; letter-spacing:0.06em; text-transform:uppercase; font-family:'Inter',sans-serif;">AI
+                                                Engine Standby</span>
                                         </div>
-                                        <h3 style="color:#e2e8f0; font-size:15px; font-weight:600; margin-bottom:6px; font-family:'Outfit','Inter',sans-serif;">Waiting for Live Video</h3>
-                                        <p style="color:#64748b; font-size:11.5px; line-height:1.4; margin:0; font-family:'Inter',sans-serif;">Once the drone stream starts, the YOLO detection engine will automatically run object recognition overlays here.</p>
+                                        <h3
+                                            style="color:#e2e8f0; font-size:15px; font-weight:600; margin-bottom:6px; font-family:'Outfit','Inter',sans-serif;">
+                                            Waiting for Live Video</h3>
+                                        <p
+                                            style="color:#64748b; font-size:11.5px; line-height:1.4; margin:0; font-family:'Inter',sans-serif;">
+                                            Once the drone stream starts, the YOLO detection engine will automatically
+                                            run object recognition overlays here.</p>
                                     </div>
                                 </div>
                             </div>
@@ -809,6 +846,54 @@
                         <!-- Hidden elements referenced by JS (not displayed) -->
                         <span id="raw-stream-time" style="display:none;"></span>
                         <span id="detection-indicator" style="display:none;"></span>
+                    </div>
+
+                    <!-- Autonomous Edge Command Console (shown only in Edge Mode when offline) -->
+                    <div id="edge-offline-console" style="display:none; flex:1; background:rgba(30,41,59,0.35); backdrop-filter:blur(12px); border:1px solid rgba(139,92,246,0.25); border-radius:20px; padding:32px; flex-direction:column; justify-content:center; align-items:center; text-align:center; min-height:420px; box-shadow:0 20px 40px -15px rgba(0,0,0,0.7); font-family:'Inter',sans-serif;">
+                        <div style="position:relative; margin-bottom:24px;">
+                            <!-- Glowing background pulse -->
+                            <div style="position:absolute; inset:-12px; background:radial-gradient(circle, rgba(139,92,246,0.3) 0%, rgba(0,0,0,0) 70%); filter:blur(8px); animation:pulse 2s infinite;"></div>
+                            <!-- Icon -->
+                            <div style="position:relative; display:flex; align-items:center; justify-content:center; width:80px; height:80px; background:rgba(139,92,246,0.1); border:2px solid rgba(139,92,246,0.4); border-radius:50%; font-size:36px; color:#c084fc; margin: 0 auto;">🛸</div>
+                        </div>
+                        
+                        <h3 style="color:#ffffff; font-size:20px; font-weight:700; margin:0 0 8px 0; font-family:'Outfit','Inter',sans-serif; letter-spacing:-0.02em;">Autonomous Edge-AI Active</h3>
+                        <div style="display:inline-flex; align-items:center; gap:6px; background:rgba(139,92,246,0.15); border:1px solid rgba(139,92,246,0.3); border-radius:100px; padding:4px 12px; margin-bottom:20px;">
+                            <span style="display:inline-block; width:6px; height:6px; background:#a78bfa; border-radius:50%; box-shadow:0 0 8px #a78bfa; animation:pulse 1.5s infinite;"></span>
+                            <span style="color:#c084fc; font-weight:700; font-size:10.5px; text-transform:uppercase; letter-spacing:0.06em; font-family:'Inter',sans-serif;">Offline Processing Enabled</span>
+                        </div>
+                        
+                        <div style="max-width:540px; margin: 0 auto 28px auto;">
+                            <p style="color:#e2e8f0; font-size:13.5px; line-height:1.6; margin:0 0 16px 0; font-weight:500;">
+                                The fleet asset is configured to run all machine learning workloads **locally on its on-board NVIDIA Jetson Nano**. It does not require an active cloud connection to detect sand mining.
+                            </p>
+                            
+                            <!-- Grid of details -->
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; text-align:left;">
+                                <div style="background:rgba(15,23,42,0.4); border:1px solid rgba(255,255,255,0.05); border-radius:12px; padding:12px;">
+                                    <h4 style="color:#a78bfa; font-size:11px; text-transform:uppercase; margin:0 0 4px 0; letter-spacing:0.04em;">On-Device YOLOv8</h4>
+                                    <span style="color:#94a3b8; font-size:11.5px; line-height:1.4;">Real-time AI overlays are rendered on-board the aircraft controller.</span>
+                                </div>
+                                <div style="background:rgba(15,23,42,0.4); border:1px solid rgba(255,255,255,0.05); border-radius:12px; padding:12px;">
+                                    <h4 style="color:#34d399; font-size:11px; text-transform:uppercase; margin:0 0 4px 0; letter-spacing:0.04em;">Offline Cache Storage</h4>
+                                    <span style="color:#94a3b8; font-size:11.5px; line-height:1.4;">Evidence logs and coordinates are cached locally on drone storage.</span>
+                                </div>
+                                <div style="background:rgba(15,23,42,0.4); border:1px solid rgba(255,255,255,0.05); border-radius:12px; padding:12px;">
+                                    <h4 style="color:#60a5fa; font-size:11px; text-transform:uppercase; margin:0 0 4px 0; letter-spacing:0.04em;">Auto Cloud Sync</h4>
+                                    <span style="color:#94a3b8; font-size:11.5px; line-height:1.4;">When cellular or Wi-Fi links are restored, incidents will auto-sync to the database.</span>
+                                </div>
+                                <div style="background:rgba(15,23,42,0.4); border:1px solid rgba(255,255,255,0.05); border-radius:12px; padding:12px;">
+                                    <h4 style="color:#f59e0b; font-size:11px; text-transform:uppercase; margin:0 0 4px 0; letter-spacing:0.04em;">RTMP Streaming</h4>
+                                    <span style="color:#94a3b8; font-size:11.5px; line-height:1.4;">Cloud mirroring is optional. You can mirror the live feed by enabling it below.</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style="display:flex; gap:12px; justify-content:center;">
+                            <button id="btn-mirror-stream" type="button" style="background:#8b5cf6; border:none; color:white; border-radius:8px; padding:10px 20px; font-size:13px; font-weight:700; cursor:pointer; transition:all 0.2s; box-shadow:0 4px 12px rgba(139, 92, 246, 0.2);" onmouseover="this.style.background='#7c3aed'" onmouseout="this.style.background='#8b5cf6'">
+                                📡 Connect Live Stream Mirroring
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Filters -->
@@ -889,9 +974,11 @@
                             </button>
                         </div>
 
-                        <div id="hud-advanced-settings" style="display: none; border-top: 1px solid #374151; padding-top: 8px; margin-top: 6px;">
+                        <div id="hud-advanced-settings"
+                            style="display: none; border-top: 1px solid #374151; padding-top: 8px; margin-top: 6px;">
                             <!--  DYNAMIC DYNAMIC VIDEO / RTMP SOURCE  -->
-                            <h4 style="font-size: 11px; margin-bottom: 4px; color: #f43f5e;">Live Drone Stream Source:</h4>
+                            <h4 style="font-size: 11px; margin-bottom: 4px; color: #f43f5e;">Live Drone Stream Source:
+                            </h4>
                             <input type="text" id="stream-source-input" placeholder="e.g. rtmp://domain/live/key or 0"
                                 style="width:95%; padding: 4px 6px; font-size:11px; background:#111827; border:1px solid #374151; color:#fff; border-radius:4px; outline:none; margin-bottom: 8px;">
 
@@ -902,7 +989,8 @@
                                 <option value="yolov8n.pt">YOLOv8 Nano (loading...)</option>
                             </select>
                             <div style="display:flex; gap:4px; align-items:center; margin-bottom:6px;">
-                                <input type="file" id="model-upload-input" accept=".pt,.onnx,.engine,.torchscript" style="display:none;">
+                                <input type="file" id="model-upload-input" accept=".pt,.onnx,.engine,.torchscript"
+                                    style="display:none;">
                                 <button id="model-upload-btn"
                                     style="padding:3px 8px; font-size:10px; background:#1e3a5f; color:#60a5fa; border:1px solid #3b82f6; border-radius:4px; cursor:pointer; white-space:nowrap;">
                                     Upload .pt
@@ -919,7 +1007,8 @@
                             </select>
 
                             <!--  DYNAMIC GEOFENCE START TRIGGER CONTROLS  -->
-                            <h4 style="font-size: 11px; margin-bottom: 4px; color: #34d399;">Detection Start Geofence:</h4>
+                            <h4 style="font-size: 11px; margin-bottom: 4px; color: #34d399;">Detection Start Geofence:
+                            </h4>
                             <div style="display:flex; flex-direction:column; gap:4px; margin-bottom:6px;">
                                 <div class="info-row">
                                     <span>Start Lat:</span>
@@ -1346,6 +1435,8 @@
         let dronesNameMap = { 'default_drone': 'Default Drone' };
         let dronesModeMap = { 'default_drone': 'cloud' };
         let currentDroneId = 'default_drone';
+        let isStreamOffline = true;
+        let forceMirrorStream = false;
 
         function updateRtmpIngestUrl() {
             const rtmpEl = document.getElementById('rtmp-ingest-url');
@@ -1364,6 +1455,9 @@
             const aiStandbyP = document.querySelector('#standby-overlay-ai p');
             const aiStandbySpan = document.querySelector('#standby-overlay-ai span[style*="uppercase"]');
 
+            const rawStandbyDesc = document.getElementById('raw-standby-desc');
+            const rawStandbyInstructions = document.getElementById('raw-standby-instructions');
+
             if (mode === 'edge') {
                 if (aiBadge) {
                     aiBadge.textContent = ' EDGE ACTIVE';
@@ -1380,6 +1474,12 @@
                 }
                 if (aiStandbyP) {
                     aiStandbyP.textContent = 'High-efficiency Edge-AI is active. Your Jetson Nano is pre-rendering YOLO overlays directly on the drone hardware.';
+                }
+                if (rawStandbyDesc) {
+                    rawStandbyDesc.textContent = 'Edge-AI Offline Mode Active. Cloud live streaming is optional. The drone is pre-rendering overlays directly on-device.';
+                }
+                if (rawStandbyInstructions) {
+                    rawStandbyInstructions.style.opacity = '0.6';
                 }
             } else {
                 if (aiBadge) {
@@ -1398,6 +1498,26 @@
                 if (aiStandbyP) {
                     aiStandbyP.textContent = 'Once the drone stream starts, the YOLO detection engine will automatically run object recognition overlays here.';
                 }
+                if (rawStandbyDesc) {
+                    rawStandbyDesc.textContent = 'The live drone camera stream is currently offline.';
+                }
+                if (rawStandbyInstructions) {
+                    rawStandbyInstructions.style.opacity = '1';
+                }
+            }
+
+            // Toggle consolidated Edge Console vs standard feeds container
+            const feedsContainer = document.getElementById('video-feeds-container');
+            const edgeConsole = document.getElementById('edge-offline-console');
+
+            if (feedsContainer && edgeConsole) {
+                if (mode === 'edge' && isStreamOffline && !forceMirrorStream) {
+                    feedsContainer.style.display = 'none';
+                    edgeConsole.style.display = 'flex';
+                } else {
+                    feedsContainer.style.display = 'grid';
+                    edgeConsole.style.display = 'none';
+                }
             }
 
             // Sync Tactical HUD Advanced select dropdown
@@ -1413,33 +1533,33 @@
                 .then(data => {
                     const droneSelect = document.getElementById('drone-select');
                     const currentValue = droneSelect.value;
-                    
+
                     // Clear and rebuild choices
                     droneSelect.innerHTML = '';
-                    
+
                     const optDefault = document.createElement('option');
                     optDefault.value = 'default_drone';
                     optDefault.textContent = 'Default Drone';
                     droneSelect.appendChild(optDefault);
-                    
+
                     data.forEach(d => {
                         activeDronesRegistry.add(d.drone_id);
                         dronesNameMap[d.drone_id] = d.drone_name;
                         dronesModeMap[d.drone_id] = d.processing_mode || 'cloud';
-                        
+
                         const opt = document.createElement('option');
                         opt.value = d.drone_id;
                         opt.textContent = `${d.drone_name} (${d.drone_id})`;
                         droneSelect.appendChild(opt);
                     });
-                    
+
                     // Re-select if exists
                     if (Array.from(droneSelect.options).some(o => o.value === currentValue)) {
                         droneSelect.value = currentValue;
                     } else {
                         droneSelect.value = 'default_drone';
                     }
-                    
+
                     updateRtmpIngestUrl();
                     updateProcessingModeUi();
                 })
@@ -1464,7 +1584,7 @@
             const droneName = document.getElementById('modal-drone-name').value.trim();
             const processingMode = document.getElementById('modal-drone-mode').value;
             const errorEl = document.getElementById('modal-error-msg');
-            
+
             if (!droneId || !droneName) return;
 
             fetch(BASE_PATH + 'api/drones', {
@@ -1472,22 +1592,22 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ drone_id: droneId, drone_name: droneName, processing_mode: processingMode })
             })
-            .then(r => {
-                if (!r.ok) {
-                    return r.json().then(err => { throw new Error(err.detail || 'Failed to register drone'); });
-                }
-                return r.json();
-            })
-            .then(data => {
-                toggleAddDroneModal(false);
-                fetchDrones();
-            })
-            .catch(err => {
-                if (errorEl) {
-                    errorEl.textContent = err.message;
-                    errorEl.style.display = 'block';
-                }
-            });
+                .then(r => {
+                    if (!r.ok) {
+                        return r.json().then(err => { throw new Error(err.detail || 'Failed to register drone'); });
+                    }
+                    return r.json();
+                })
+                .then(data => {
+                    toggleAddDroneModal(false);
+                    fetchDrones();
+                })
+                .catch(err => {
+                    if (errorEl) {
+                        errorEl.textContent = err.message;
+                        errorEl.style.display = 'block';
+                    }
+                });
         }
 
         let detectionMarkers = [];
@@ -1691,7 +1811,7 @@
                     iconSize: [16, 16]
                 });
                 marker.setIcon(icon);
-                
+
                 const trail = flightTrailsMap[id];
                 if (trail) {
                     trail.setStyle({
@@ -1720,6 +1840,7 @@
             }
 
             currentDroneId = nextDroneId;
+            forceMirrorStream = false; // Reset to default clean offline dashboard for the new drone
             updateDroneMarkerStyles();
             updateRtmpIngestUrl();
             updateProcessingModeUi();
@@ -1794,7 +1915,10 @@
                     }
                 } else if (data.type === 'stream_status') {
                     const isSynthetic = data.payload.use_synthetic_video;
-                    
+
+                    isStreamOffline = isSynthetic;
+                    updateProcessingModeUi();
+
                     const overlayRaw = document.getElementById('standby-overlay');
                     const overlayAI = document.getElementById('standby-overlay-ai');
                     if (isSynthetic) {
@@ -1816,10 +1940,10 @@
         }
 
         // Global clipboard utility for streaming checklist
-        window.copyIngestUrl = function(button) {
+        window.copyIngestUrl = function (button) {
             const codeEl = document.getElementById('rtmp-ingest-url');
             if (!codeEl) return;
-            
+
             navigator.clipboard.writeText(codeEl.textContent).then(() => {
                 const originalText = button.textContent;
                 button.textContent = 'Copied!';
@@ -1845,7 +1969,7 @@
             }
 
             const latlng = [tele.lat, tele.lon];
-            
+
             // 1. Get or create drone marker
             if (!droneMarkersMap[senderDroneId]) {
                 const isActive = senderDroneId === currentDroneId;
@@ -2168,7 +2292,7 @@
                     modelUploadStatus.style.color = '#f43f5e';
                     return;
                 }
-                
+
                 modelUploadStatus.textContent = 'Uploading...';
                 modelUploadStatus.style.color = '#fbbf24';
 
@@ -2221,6 +2345,17 @@
                 });
             }
 
+            // Mirror live stream action click listener
+            const btnMirrorStream = document.getElementById('btn-mirror-stream');
+            if (btnMirrorStream) {
+                btnMirrorStream.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    forceMirrorStream = true;
+                    updateProcessingModeUi();
+                    console.log("Operator selected to mirror raw live video stream from Edge asset.");
+                });
+            }
+
             // AI Processing Mode change listener
             const hudProcessingModeSelect = document.getElementById('hud-processing-mode');
             if (hudProcessingModeSelect) {
@@ -2238,21 +2373,21 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ processing_mode: newMode })
                     })
-                    .then(r => {
-                        if (!r.ok) {
-                            throw new Error('Failed to update processing mode on the server');
-                        }
-                        return r.json();
-                    })
-                    .then(data => {
-                        dronesModeMap[currentDroneId] = newMode;
-                        updateProcessingModeUi();
-                        console.log(`Successfully hot-swapped compute mode for ${currentDroneId} to ${newMode}`);
-                    })
-                    .catch(err => {
-                        alert(err.message);
-                        hudProcessingModeSelect.value = dronesModeMap[currentDroneId] || 'cloud';
-                    });
+                        .then(r => {
+                            if (!r.ok) {
+                                throw new Error('Failed to update processing mode on the server');
+                            }
+                            return r.json();
+                        })
+                        .then(data => {
+                            dronesModeMap[currentDroneId] = newMode;
+                            updateProcessingModeUi();
+                            console.log(`Successfully hot-swapped compute mode for ${currentDroneId} to ${newMode}`);
+                        })
+                        .catch(err => {
+                            alert(err.message);
+                            hudProcessingModeSelect.value = dronesModeMap[currentDroneId] || 'cloud';
+                        });
                 });
             }
 
@@ -2333,7 +2468,7 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
                     }).catch(err => console.debug("Map-click auto sync skipped:", err));
-                } catch(e) {}
+                } catch (e) { }
             }
 
             // Load initial flight parameters from server database on startup
@@ -2342,7 +2477,7 @@
                 .then(cfg => {
                     modelSelect.value = cfg.active_model;
                     radiusSelect.value = cfg.start_radius_meters;
-                    
+
                     const sourceInput = document.getElementById('stream-source-input');
                     if (sourceInput) {
                         const val = cfg.video_source || '';
@@ -2626,7 +2761,7 @@
                                 const lat = position.coords.latitude;
                                 const lon = position.coords.longitude;
                                 console.log(`[GEOLOCATION] Auto-detected operator location: ${lat}, ${lon}`);
-                                
+
                                 // Auto-update HUD input fields
                                 const latInput = document.getElementById('geofence-lat');
                                 const lonInput = document.getElementById('geofence-lon');
@@ -2634,7 +2769,7 @@
                                     latInput.value = lat.toFixed(5);
                                     lonInput.value = lon.toFixed(5);
                                 }
-                                
+
                                 // POST this directly to VPS to auto-trigger fallback telemetry broadcast
                                 const payload = {
                                     active_model: document.getElementById('model-select')?.value || "yolov8n.pt",
@@ -2644,17 +2779,17 @@
                                     video_source: "rtmp://187.127.142.58:1935/live/drone",
                                     detection_enabled: true
                                 };
-                                
+
                                 fetch(BASE_PATH + 'api/flight/config', {
                                     method: 'POST',
                                     headers: { 'Content-Type': 'application/json' },
                                     body: JSON.stringify(payload)
                                 })
-                                .then(r => r.json())
-                                .then(res => {
-                                    console.log("[GEOLOCATION] Config sync complete. Telemetry fallback active.");
-                                })
-                                .catch(err => console.debug("Auto-geolocate sync skipped:", err));
+                                    .then(r => r.json())
+                                    .then(res => {
+                                        console.log("[GEOLOCATION] Config sync complete. Telemetry fallback active.");
+                                    })
+                                    .catch(err => console.debug("Auto-geolocate sync skipped:", err));
                             },
                             (error) => {
                                 console.debug("Browser geolocation declined/failed. Standing by for manual map clicks.", error);
@@ -2673,38 +2808,64 @@
     </script>
 
     <!-- Add Drone Modal -->
-    <div id="add-drone-modal" style="display: none; position: fixed; inset: 0; z-index: 99999; align-items: center; justify-content: center; padding: 16px;">
+    <div id="add-drone-modal"
+        style="display: none; position: fixed; inset: 0; z-index: 99999; align-items: center; justify-content: center; padding: 16px;">
         <!-- Backdrop -->
-        <div style="position: absolute; inset: 0; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(8px); transition: all 0.3s;" onclick="toggleAddDroneModal(false)"></div>
+        <div style="position: absolute; inset: 0; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(8px); transition: all 0.3s;"
+            onclick="toggleAddDroneModal(false)"></div>
         <!-- Dialog -->
-        <div style="position: relative; width: 100%; max-width: 440px; background: rgba(17, 24, 39, 0.95); border: 1px solid #374151; border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); overflow: hidden; padding: 24px; font-family: inherit; color: #e5e7eb;">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; border-bottom: 1px solid #374151; padding-bottom: 12px;">
-                <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #f3f4f6; font-family:'Outfit','Inter',sans-serif;">Register New Fleet Asset</h3>
-                <button onclick="toggleAddDroneModal(false)" style="background: none; border: none; color: #9ca3af; cursor: pointer; font-size: 20px; outline: none; line-height: 1;">&times;</button>
+        <div
+            style="position: relative; width: 100%; max-width: 440px; background: rgba(17, 24, 39, 0.95); border: 1px solid #374151; border-radius: 20px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); overflow: hidden; padding: 24px; font-family: inherit; color: #e5e7eb;">
+            <div
+                style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; border-bottom: 1px solid #374151; padding-bottom: 12px;">
+                <h3
+                    style="margin: 0; font-size: 16px; font-weight: 700; color: #f3f4f6; font-family:'Outfit','Inter',sans-serif;">
+                    Register New Fleet Asset</h3>
+                <button onclick="toggleAddDroneModal(false)"
+                    style="background: none; border: none; color: #9ca3af; cursor: pointer; font-size: 20px; outline: none; line-height: 1;">&times;</button>
             </div>
-            
+
             <form id="add-drone-form" onsubmit="submitAddDroneForm(event)">
                 <div style="margin-bottom: 16px;">
-                    <label style="display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; tracking: 0.05em; color: #9ca3af; margin-bottom: 6px; font-family:'Inter',sans-serif;">Drone Name / Call Sign *</label>
-                    <input type="text" id="modal-drone-name" placeholder="e.g. East River Patrol" required style="width: 100%; background: #1f2937; border: 1px solid #4b5563; color: #f3f4f6; border-radius: 8px; padding: 10px 12px; font-size: 13px; outline: none; transition: border-color 0.2s;" onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#4b5563'">
+                    <label
+                        style="display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; tracking: 0.05em; color: #9ca3af; margin-bottom: 6px; font-family:'Inter',sans-serif;">Drone
+                        Name / Call Sign *</label>
+                    <input type="text" id="modal-drone-name" placeholder="e.g. East River Patrol" required
+                        style="width: 100%; background: #1f2937; border: 1px solid #4b5563; color: #f3f4f6; border-radius: 8px; padding: 10px 12px; font-size: 13px; outline: none; transition: border-color 0.2s;"
+                        onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#4b5563'">
                 </div>
                 <div style="margin-bottom: 16px;">
-                    <label style="display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; tracking: 0.05em; color: #9ca3af; margin-bottom: 6px; font-family:'Inter',sans-serif;">Unique Drone ID *</label>
-                    <input type="text" id="modal-drone-id" placeholder="e.g. drone_101" required pattern="^[a-zA-Z0-9_]+$" style="width: 100%; background: #1f2937; border: 1px solid #4b5563; color: #f3f4f6; border-radius: 8px; padding: 10px 12px; font-size: 13px; outline: none; transition: border-color 0.2s;" onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#4b5563'">
+                    <label
+                        style="display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; tracking: 0.05em; color: #9ca3af; margin-bottom: 6px; font-family:'Inter',sans-serif;">Unique
+                        Drone ID *</label>
+                    <input type="text" id="modal-drone-id" placeholder="e.g. drone_101" required
+                        pattern="^[a-zA-Z0-9_]+$"
+                        style="width: 100%; background: #1f2937; border: 1px solid #4b5563; color: #f3f4f6; border-radius: 8px; padding: 10px 12px; font-size: 13px; outline: none; transition: border-color 0.2s;"
+                        onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#4b5563'">
                 </div>
                 <div style="margin-bottom: 20px;">
-                    <label style="display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; tracking: 0.05em; color: #9ca3af; margin-bottom: 6px; font-family:'Inter',sans-serif;">AI Processing Location *</label>
-                    <select id="modal-drone-mode" required style="width: 100%; background: #1f2937; border: 1px solid #4b5563; color: #f3f4f6; border-radius: 8px; padding: 10px 12px; font-size: 13px; outline: none; transition: border-color 0.2s;" onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#4b5563'">
+                    <label
+                        style="display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; tracking: 0.05em; color: #9ca3af; margin-bottom: 6px; font-family:'Inter',sans-serif;">AI
+                        Processing Location *</label>
+                    <select id="modal-drone-mode" required
+                        style="width: 100%; background: #1f2937; border: 1px solid #4b5563; color: #f3f4f6; border-radius: 8px; padding: 10px 12px; font-size: 13px; outline: none; transition: border-color 0.2s;"
+                        onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#4b5563'">
                         <option value="cloud">Cloud AI </option>
                         <option value="edge">Edge AI </option>
                     </select>
                 </div>
-                
-                <div id="modal-error-msg" style="display: none; color: #f87171; font-size: 12px; font-weight: 600; margin-bottom: 16px; background: rgba(239, 68, 68, 0.1); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(239, 68, 68, 0.2); font-family:'Inter',sans-serif;"></div>
+
+                <div id="modal-error-msg"
+                    style="display: none; color: #f87171; font-size: 12px; font-weight: 600; margin-bottom: 16px; background: rgba(239, 68, 68, 0.1); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(239, 68, 68, 0.2); font-family:'Inter',sans-serif;">
+                </div>
 
                 <div style="display: flex; gap: 12px; justify-content: flex-end;">
-                    <button type="button" onclick="toggleAddDroneModal(false)" style="background: #374151; border: 1px solid #4b5563; color: #d1d5db; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family:'Inter',sans-serif;">Cancel</button>
-                    <button type="submit" style="background: #22c55e; border: none; color: white; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.2); font-family:'Inter',sans-serif;" onmouseover="this.style.background='#16a34a'" onmouseout="this.style.background='#22c55e'">Register Asset</button>
+                    <button type="button" onclick="toggleAddDroneModal(false)"
+                        style="background: #374151; border: 1px solid #4b5563; color: #d1d5db; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family:'Inter',sans-serif;">Cancel</button>
+                    <button type="submit"
+                        style="background: #22c55e; border: none; color: white; border-radius: 8px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 12px rgba(34, 197, 94, 0.2); font-family:'Inter',sans-serif;"
+                        onmouseover="this.style.background='#16a34a'"
+                        onmouseout="this.style.background='#22c55e'">Register Asset</button>
                 </div>
             </form>
         </div>
