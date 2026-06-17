@@ -1,5 +1,5 @@
 =============================================================================
-             DJI JETSON NANO - SURVEILLANCE EDGE PIPELINE QUICKSTART
+              DJI JETSON NANO - SURVEILLANCE EDGE PIPELINE QUICKSTART
 =============================================================================
 
 This document contains step-by-step instructions for running, testing, and 
